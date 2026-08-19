@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/*
+ * Palette comes from IPF calibrated competition plates, where colour encodes
+ * weight: 25kg red, 20kg blue, 15kg yellow, 10kg green. Yellow leads because
+ * it's the most legible against iron; red is held back for personal records
+ * and destructive actions so it never means two things at once.
+ */
+@theme {
+  --color-iron-950: #0b0f14;
+  --color-iron-900: #10151b;
+  --color-iron-850: #161d25;
+  --color-iron-800: #1d252f;
+  --color-iron-700: #2a3440;
+  --color-iron-600: #3b4756;
+  --color-iron-500: #55636f;
+
+  --color-chalk-50: #f4f6f8;
+  --color-chalk-200: #cdd6de;
+  --color-chalk-300: #aab5c0;
+  --color-chalk-500: #7b8794;
+  --color-chalk-600: #5d6874;
+
+  --color-plate-yellow: #f2c300;
+  --color-plate-yellow-hot: #ffd426;
+  --color-plate-red: #d62839;
+  --color-plate-blue: #2f6fb0;
+  --color-plate-green: #2f9e5f;
+  --color-flag-orange: #e07a2f;
+
+  --font-display: "Saira Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Archivo", system-ui, sans-serif;
+  --font-data: "Azeret Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-iron-950);
+  }
+
+  body {
+    font-family: var(--font-body);
+    color: var(--color-chalk-200);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Condensed display type wants tighter tracking at large sizes. */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: var(--color-chalk-50);
+  }
+
+  /* Numbers should never reflow as they tick. */
+  input[type="number"],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Chrome's spinners fight the steppers. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  ::selection {
+    background: var(--color-plate-yellow);
+    color: var(--color-iron-950);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-plate-yellow);
+    outline-offset: 2px;
+  }
+
+  select option {
+    background: var(--color-iron-800);
+    color: var(--color-chalk-50);
+  }
+}
+
+@layer components {
+  /* Stencilled micro-label. Used for field names and section eyebrows. */
+  .stencil {
+    font-family: var(--font-data);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-chalk-500);
+  }
+
+  /* Big scoreboard figure. */
+  .readout {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 0.9;
+    color: var(--color-chalk-50);
+  }
+
+  /*
+   * Signature: the three judges' lights. Three whites is a good lift, so a
+   * completed set lights all three, and a personal record makes them flash.
+   */
+  .lights {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .light {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: var(--color-iron-600);
+    transition: background 160ms ease;
+  }
+  .light-on {
+    background: var(--color-chalk-50);
+    box-shadow: 0 0 6px rgb(244 246 248 / 0.7);
+  }
+  .light-pr {
+    background: var(--color-plate-red);
+    box-shadow: 0 0 8px rgb(214 40 57 / 0.9);
+    animation: flash 620ms steps(1) 4;
+  }
+  @keyframes flash {
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  /* Knurling: the grip texture on a barbell. Used as a section rule. */
+  .knurl {
+    height: 4px;
+    background-image: repeating-linear-gradient(
+      -60deg,
+      var(--color-iron-600) 0 1px,
+      transparent 1px 4px
+    );
+  }
+}
+
+/*
+ * `animate-in fade-in zoom-in-95` comes from the tailwindcss-animate plugin,
+ * which was never installed — the classes were silently doing nothing.
+ * Defined here to keep the markup unchanged without adding a dependency.
+ */
+@keyframes enter {
+  from {
+    opacity: var(--enter-opacity, 1);
+    transform: scale(var(--enter-scale, 1));
+  }
+}
+
+.animate-in {
+  animation-name: enter;
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+.fade-in {
+  --enter-opacity: 0;
+}
+.zoom-in-95 {
+  --enter-scale: 0.95;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .light-pr {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keeps the iOS keyboard from zooming the page when a field is focused. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
