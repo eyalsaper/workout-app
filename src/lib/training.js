@@ -1,5 +1,7 @@
 // Training maths and date helpers. Pure functions — no React, no Firebase.
 
+import { isRestEntry } from "./format";
+
 export const MUSCLE_GROUPS = [
   "Chest",
   "Back",
@@ -12,6 +14,25 @@ export const MUSCLE_GROUPS = [
   "Calves",
   "Core",
 ];
+
+/**
+ * Plan rows have never had an editable day-name field — every account's
+ * `row.day` is still literally "Day 1".."Day 7" — so labeling them
+ * Monday..Sunday by position is a pure presentation change, not a migration.
+ */
+export const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+export function weekdayLabel(dayIndex) {
+  return WEEKDAY_NAMES[dayIndex] || `Day ${dayIndex + 1}`;
+}
 
 const LB_TO_KG = 0.45359237;
 
@@ -271,4 +292,159 @@ export function exerciseHistory(sessions, exerciseName, bodyweightKg = 0) {
     })
     .filter((point) => point.sets > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ---------------------------------------------------------------- dashboard
+/** The 7 dateKey strings, Monday through Sunday, for the week containing `date`. */
+export function weekDates(date = new Date()) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const mondayOffset = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - mondayOffset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(d);
+    day.setDate(d.getDate() + i);
+    return dateKey(day);
+  });
+}
+
+/**
+ * Per-calendar-day status for the Mon-Sun strip of one plan. A plan's rows
+ * are an ordered weekly checklist, not fixed weekdays — nothing pins "Day 1"
+ * to Monday — so this reports whether *any* row of the plan was finished on
+ * each real date, rather than trying to line up dayIndex with weekday.
+ */
+export function weekStrip(plans, sessions, planId) {
+  const dates = weekDates();
+  const today = dateKey();
+  const sessionList = Object.values(sessions || {}).filter(
+    (s) => Number(s?.planId) === Number(planId)
+  );
+  return dates.map((day) => {
+    const daySessions = sessionList.filter((s) => s?.date === day);
+    return {
+      date: day,
+      isToday: day === today,
+      isPast: day < today,
+      isRest: (plans[planId] || []).length === 0,
+      done: daySessions.some((s) => !!s.finishedAt),
+      inProgress: daySessions.some((s) => !s.finishedAt),
+    };
+  });
+}
+
+/**
+ * Consecutive Monday-Sunday weeks, ending at the current or most recent
+ * finished week, with at least one finished session. The in-progress
+ * current week never breaks the streak before it's over — it just isn't
+ * counted until it has a finished session of its own.
+ */
+export function computeStreak(sessions) {
+  const finishedWeeks = new Set(
+    Object.values(sessions || {})
+      .filter((s) => s?.finishedAt && s?.date)
+      .map((s) => weekKeyFromDay(s.date))
+  );
+
+  const cursor = new Date();
+  let checking = weekKey(cursor);
+  if (!finishedWeeks.has(checking)) {
+    cursor.setDate(cursor.getDate() - 7);
+    checking = weekKey(cursor);
+  }
+
+  let streak = 0;
+  while (finishedWeeks.has(checking)) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 7);
+    checking = weekKey(cursor);
+  }
+  return streak;
+}
+
+/** Heaviest single set, best single-session tonnage, and average RPE for one exercise. */
+export function liftStats(sessions, exerciseName, bodyweightKg = 0) {
+  let heaviestWeight = 0;
+  let heaviestReps = 0;
+  let bestVolume = 0;
+  let rpeSum = 0;
+  let rpeCount = 0;
+
+  Object.values(sessions || {}).forEach((session) => {
+    const sets = (session?.entries?.[exerciseName]?.sets || []).filter(
+      (s) => s && s.done
+    );
+    if (sets.length === 0) return;
+
+    let sessionVolume = 0;
+    sets.forEach((s) => {
+      const weight = parseFloat(s.weight) || 0;
+      if (weight > heaviestWeight) {
+        heaviestWeight = weight;
+        heaviestReps = Number(s.reps) || 0;
+      }
+      sessionVolume += toKg(s.weight, s.weightUnit, bodyweightKg) * (Number(s.reps) || 0);
+      if (s.rpe) {
+        rpeSum += Number(s.rpe);
+        rpeCount++;
+      }
+    });
+    bestVolume = Math.max(bestVolume, sessionVolume);
+  });
+
+  return {
+    heaviestWeight,
+    heaviestReps,
+    bestVolume: Math.round(bestVolume),
+    avgRpe: rpeCount > 0 ? Math.round((rpeSum / rpeCount) * 10) / 10 : null,
+  };
+}
+
+/** Total tonnage per week for the last `weeks` Mon-Sun weeks, oldest first. */
+export function weeklyVolumeSeries(sessions, bodyweightKg = 0, weeks = 12) {
+  const byWeek = {};
+  Object.values(sessions || {}).forEach((session) => {
+    if (!session?.date) return;
+    const week = weekKeyFromDay(session.date);
+    const doneSets = Object.values(session.entries || {}).flatMap((e) =>
+      (e.sets || []).filter((s) => s && s.done)
+    );
+    const tonnage = doneSets.reduce(
+      (sum, s) => sum + toKg(s.weight, s.weightUnit, bodyweightKg) * (Number(s.reps) || 0),
+      0
+    );
+    byWeek[week] = (byWeek[week] || 0) + tonnage;
+  });
+
+  const series = [];
+  const cursor = new Date();
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(cursor);
+    d.setDate(d.getDate() - i * 7);
+    const week = weekKey(d);
+    series.push({ week, tonnage: Math.round(byWeek[week] || 0) });
+  }
+  return series;
+}
+
+/** Monday=0..Sunday=6 index for a date — plan rows are pinned to weekdays by position. */
+export function todayDayIndex(date = new Date()) {
+  return (date.getDay() + 6) % 7;
+}
+
+/** Total logged sets and tonnage across every session in one Mon-Sun week. */
+export function weekSummary(sessions, week, bodyweightKg = 0) {
+  let sets = 0;
+  let tonnageKg = 0;
+  Object.values(sessions || {}).forEach((session) => {
+    if (!session?.date || weekKeyFromDay(session.date) !== week) return;
+    const doneSets = Object.values(session.entries || {}).flatMap((e) =>
+      (e.sets || []).filter((s) => s && s.done)
+    );
+    sets += doneSets.length;
+    tonnageKg += doneSets.reduce(
+      (sum, s) => sum + toKg(s.weight, s.weightUnit, bodyweightKg) * (Number(s.reps) || 0),
+      0
+    );
+  });
+  return { sets, tonnageKg: Math.round(tonnageKg) };
 }

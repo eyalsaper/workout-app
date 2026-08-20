@@ -10,14 +10,14 @@ import { formatClock } from "../lib/format";
  *
  * Counts to a wall-clock deadline, so locking the screen doesn't pause it.
  */
-export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
+export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust, soundEnabled = true }) {
   const [remaining, setRemaining] = useState(seconds);
   const alarmedRef = useRef(false);
 
   useEffect(() => {
     if (!startedAt) return undefined;
     alarmedRef.current = false;
-    unlockAudio();
+    if (soundEnabled) unlockAudio();
 
     const deadline = startedAt + seconds * 1000;
     const tick = () => {
@@ -25,15 +25,17 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
       setRemaining(left);
       if (left === 0 && !alarmedRef.current) {
         alarmedRef.current = true;
-        playTimerAlarm();
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        if (soundEnabled) {
+          playTimerAlarm();
+          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        }
       }
     };
 
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [startedAt, seconds]);
+  }, [startedAt, seconds, soundEnabled]);
 
   if (!startedAt) return null;
 
@@ -42,21 +44,19 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
 
   return (
     <div
-      className={`rounded border p-3 transition-colors ${
-        isDone ? "bg-plate-green/10 border-plate-green/50" : "bg-iron-950 border-iron-700"
+      className={`rounded-card p-3 transition-colors ${
+        isDone ? "bg-positive-bg" : "card"
       }`}
     >
       <div className="flex items-center gap-3">
         <span
-          className={`font-mono text-2xl font-bold tabular-nums ${
-            isDone ? "text-plate-green" : "text-white"
-          }`}
+          className={`readout text-2xl ${isDone ? "text-positive-ink-strong" : "text-ink"}`}
         >
           {formatClock(remaining)}
         </span>
         <span
           className={`text-sm font-medium flex-1 ${
-            isDone ? "text-plate-green" : "text-chalk-600"
+            isDone ? "text-positive-ink" : "text-ink-muted"
           }`}
         >
           {isDone ? "Rest done — go" : "Resting"}
@@ -66,8 +66,8 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
           type="button"
           onClick={() => onAdjust(-30)}
           aria-label="30 seconds less rest"
-          className={`p-1.5 rounded ${
-            isDone ? "hover:bg-plate-green/20 text-plate-green" : "hover:bg-iron-700 text-chalk-600"
+          className={`p-1.5 rounded-card ${
+            isDone ? "hover:bg-positive-ink/10 text-positive-ink" : "hover:bg-surface-wash text-ink-muted"
           }`}
         >
           <Minus className="w-4 h-4" />
@@ -76,8 +76,8 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
           type="button"
           onClick={() => onAdjust(30)}
           aria-label="30 seconds more rest"
-          className={`p-1.5 rounded ${
-            isDone ? "hover:bg-plate-green/20 text-plate-green" : "hover:bg-iron-700 text-chalk-600"
+          className={`p-1.5 rounded-card ${
+            isDone ? "hover:bg-positive-ink/10 text-positive-ink" : "hover:bg-surface-wash text-ink-muted"
           }`}
         >
           <Plus className="w-4 h-4" />
@@ -86,8 +86,8 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
           type="button"
           onClick={onDismiss}
           aria-label="Skip rest"
-          className={`p-1.5 rounded ${
-            isDone ? "hover:bg-plate-green/20 text-plate-green" : "hover:bg-iron-700 text-chalk-600"
+          className={`p-1.5 rounded-card ${
+            isDone ? "hover:bg-positive-ink/10 text-positive-ink" : "hover:bg-surface-wash text-ink-muted"
           }`}
         >
           <X className="w-4 h-4" />
@@ -95,9 +95,9 @@ export default function RestTimer({ startedAt, seconds, onDismiss, onAdjust }) {
       </div>
 
       {!isDone && (
-        <div className="mt-2 h-1 bg-iron-700 rounded-full overflow-hidden">
+        <div className="mt-2 h-1 bg-border-page rounded-full overflow-hidden">
           <div
-            className="h-full bg-plate-yellow transition-all duration-200"
+            className="h-full bg-accent transition-all duration-200"
             style={{ width: `${pct}%` }}
           />
         </div>

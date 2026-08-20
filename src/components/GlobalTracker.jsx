@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CheckCircle2, Circle, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, ListChecks, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
 
 export default function GlobalTracker() {
@@ -18,39 +18,40 @@ export default function GlobalTracker() {
   const hasVisibleItems = items.some((name) => name.trim() !== "");
 
   return (
-    <div className="bg-iron-850 rounded-sm p-6 sm:p-8 border border-iron-700">
+    <div className="card p-6 sm:p-8">
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            ✅ Global Tracker
+            <ListChecks className="w-6 h-6 text-accent" /> Weekly targets
           </h2>
-          <p className="text-chalk-500 text-sm mt-1">
-            This list stays the same across all your plans.
+          <p className="text-ink-muted text-sm mt-1">
+            The list stays the same; checkmarks reset every week.
           </p>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={resetTracker}
-            className="text-sm px-4 py-2 bg-iron-800 hover:bg-iron-800 text-chalk-200 rounded-sm transition-colors"
+            className="text-sm px-4 py-2 bg-surface-wash hover:bg-surface-wash text-ink-soft rounded-card transition-colors"
           >
-            Reset Checkmarks
+            Reset checkmarks
           </button>
           <button
             type="button"
             onClick={() => setIsEditing((v) => !v)}
-            className={`px-4 py-2 rounded-sm text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-card text-sm font-medium transition-colors flex items-center gap-1.5 ${
               isEditing
-                ? "bg-plate-yellow text-iron-950 hover:bg-plate-yellow-hot"
-                : "bg-iron-850 border border-iron-600 text-chalk-200 hover:bg-iron-800"
+                ? "bg-accent text-accent-ink hover:bg-accent-hot"
+                : "bg-surface border border-border-control text-ink-soft hover:bg-surface-wash"
             }`}
           >
-            {isEditing ? "💾 Save Tracker" : "✏️ Edit List"}
+            {isEditing ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+            {isEditing ? "Save list" : "Edit list"}
           </button>
         </div>
       </div>
 
-      <div className="bg-iron-900 p-4 sm:p-6 rounded border border-iron-800 ">
+      <div className="bg-surface-inset p-4 sm:p-6 rounded-card border border-border">
         {isEditing ? (
           <div className="space-y-3 max-w-2xl">
             {items.map((item, idx) => (
@@ -61,13 +62,13 @@ export default function GlobalTracker() {
                   value={item}
                   onChange={(e) => updateTrackerItem(idx, e.target.value)}
                   placeholder="e.g. 10,000 Steps, Stretch..."
-                  className="flex-1 p-2 border border-iron-600 rounded-sm focus:ring-2 focus:ring-plate-yellow focus:outline-none"
+                  className="flex-1 p-2 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => removeTrackerItem(idx)}
                   aria-label="Remove tracker item"
-                  className="text-plate-red/80 hover:text-plate-red p-2"
+                  className="text-negative/80 hover:text-negative p-2"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -76,9 +77,9 @@ export default function GlobalTracker() {
             <button
               type="button"
               onClick={addTrackerItem}
-              className="mt-2 px-4 py-2 text-plate-yellow hover:bg-plate-yellow/20 bg-plate-yellow/10 rounded-sm transition-colors inline-flex items-center gap-2 font-medium"
+              className="mt-2 px-4 py-2 text-accent hover:bg-accent/20 bg-accent/10 rounded-card transition-colors inline-flex items-center gap-2 font-medium"
             >
-              <Plus className="w-4 h-4" /> Add Item
+              <Plus className="w-4 h-4" /> Add item
             </button>
           </div>
         ) : (
@@ -93,22 +94,20 @@ export default function GlobalTracker() {
                     key={idx}
                     onClick={() => toggleTrackerItem(idx)}
                     aria-pressed={isChecked}
-                    className={`flex items-center gap-3 p-2 rounded-sm transition-all text-left ${
+                    className={`flex items-center gap-3 p-2 rounded-card transition-all text-left ${
                       isChecked
                         ? "opacity-50 bg-transparent"
-                        : "bg-iron-850  border border-iron-700 hover:bg-iron-800"
+                        : "bg-surface border border-border hover:bg-surface-wash"
                     }`}
                   >
                     {isChecked ? (
-                      <CheckCircle2 className="w-5 h-5 text-plate-green flex-shrink-0" />
+                      <CheckCircle2 className="w-5 h-5 text-positive-ink flex-shrink-0" />
                     ) : (
-                      <Circle className="w-5 h-5 text-chalk-600 flex-shrink-0 transition-colors" />
+                      <Circle className="w-5 h-5 text-ink-faint flex-shrink-0 transition-colors" />
                     )}
                     <span
                       className={`flex-1 truncate ${
-                        isChecked
-                          ? "line-through opacity-70"
-                          : "text-chalk-50 font-medium"
+                        isChecked ? "line-through opacity-70" : "text-ink font-medium"
                       }`}
                       title={name}
                     >
@@ -118,7 +117,7 @@ export default function GlobalTracker() {
                 );
               })
             ) : (
-              <div className="col-span-full text-center text-chalk-500 italic py-4">
+              <div className="col-span-full text-center text-ink-muted italic py-4">
                 Your tracker list is empty.
               </div>
             )}

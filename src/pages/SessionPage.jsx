@@ -1,34 +1,23 @@
 import React, { useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  Circle,
-  Flame,
-  Lightbulb,
-  Plus,
-  Smartphone,
-  X,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, Lightbulb, Plus, Smartphone, X } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
 import { useWakeLock } from "../hooks/useWakeLock";
 import RestTimer from "../components/RestTimer";
-import Stepper from "../components/Stepper";
 import ExerciseTimer from "../components/ExerciseTimer";
+import SetEntryPanel from "../components/session/SetEntryPanel";
 import { getTimerSeconds, formatReps, formatWeight } from "../lib/format";
 import {
   friendlyDate,
   daysAgo,
-  loadIncrement,
   suggestNextLoad,
   warmupSets,
   e1rm,
   toKg,
   exerciseHistory,
 } from "../lib/training";
+import { guessPattern, LIBRARY_BY_NAME, PATTERN_LABELS } from "../lib/exerciseLibrary";
 
-export default function SessionPage({ sessionKey, onExit }) {
+export default function SessionPage({ sessionKey, onExit, onFinish }) {
   const {
     sessions,
     exerciseBank,
@@ -38,16 +27,18 @@ export default function SessionPage({ sessionKey, onExit }) {
     unlogSet,
     addSetTo,
     finishSession,
+    deleteSession,
   } = useWorkout();
 
   const session = sessions[sessionKey];
   const [exIdx, setExIdx] = useState(0);
   const [restStartedAt, setRestStartedAt] = useState(null);
   const [restSeconds, setRestSeconds] = useState(90);
-  const [showWarmup, setShowWarmup] = useState(false);
   const [draft, setDraft] = useState({});
 
-  const { supported: wakeSupported, isHeld } = useWakeLock(!!session && !session.finishedAt);
+  const { supported: wakeSupported, isHeld } = useWakeLock(
+    !!session && !session.finishedAt && settings.keepScreenAwake
+  );
 
   const exerciseNames = useMemo(
     () => Object.keys(session?.entries || {}),
@@ -56,14 +47,10 @@ export default function SessionPage({ sessionKey, onExit }) {
 
   if (!session) {
     return (
-      <div className="max-w-lg mx-auto bg-iron-850 rounded-sm border border-iron-700 p-8 text-center">
-        <p className="text-chalk-300 mb-4">That session no longer exists.</p>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-4 py-2 bg-plate-yellow text-iron-950 rounded-sm font-medium"
-        >
-          Back to planner
+      <div className="max-w-lg mx-auto card p-8 text-center">
+        <p className="text-ink-soft mb-4">That session no longer exists.</p>
+        <button type="button" onClick={onExit} className="btn-clay px-4 py-2">
+          Back to Today
         </button>
       </div>
     );
@@ -71,16 +58,12 @@ export default function SessionPage({ sessionKey, onExit }) {
 
   if (exerciseNames.length === 0) {
     return (
-      <div className="max-w-lg mx-auto bg-iron-850 rounded-sm border border-iron-700 p-8 text-center space-y-4">
-        <p className="text-chalk-300">
+      <div className="max-w-lg mx-auto card p-8 text-center space-y-4">
+        <p className="text-ink-soft">
           This day has no exercises — it's a rest day.
         </p>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-4 py-2 bg-plate-yellow text-iron-950 rounded-sm font-medium"
-        >
-          Back to planner
+        <button type="button" onClick={onExit} className="btn-clay px-4 py-2">
+          Back to Today
         </button>
       </div>
     );
@@ -95,11 +78,7 @@ export default function SessionPage({ sessionKey, onExit }) {
 
   const last = getLastPerformance(exName, sessionKey);
   const priorBest = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...exerciseHistory(sessions, exName, 0).map((h) => h.e1rm)
-      ),
+    () => Math.max(0, ...exerciseHistory(sessions, exName, 0).map((h) => h.e1rm)),
     [sessions, exName]
   );
   const suggestion = suggestNextLoad(bankData, last?.sets, unit);
@@ -108,14 +87,18 @@ export default function SessionPage({ sessionKey, onExit }) {
   const totalDone = allSets.filter((s) => s.done).length;
   const totalSets = allSets.length;
 
-  const exerciseRest = parseInt(bankData?.restSeconds, 10) ||
-    parseInt(settings?.defaultRestSeconds, 10) ||
-    90;
+  const exerciseRest =
+    parseInt(bankData?.restSeconds, 10) || parseInt(settings?.defaultRestSeconds, 10) || 90;
 
   const workingWeight = parseFloat(
     sets.find((s) => s.weight)?.weight || suggestion?.weight || 0
   );
   const warmups = warmupSets(workingWeight, unit);
+
+  const pattern = bankData?.pattern || guessPattern(exName);
+  const patternLabel = PATTERN_LABELS[pattern];
+  const libraryEntry = LIBRARY_BY_NAME[exName];
+  const cue = libraryEntry?.cues?.[0];
 
   const draftFor = (setIdx) => {
     const key = `${exName}_${setIdx}`;
@@ -147,6 +130,8 @@ export default function SessionPage({ sessionKey, onExit }) {
       [`${exName}_${setIdx}`]: { ...draftFor(setIdx), ...patch },
     }));
 
+  const goToExercise = (idx) => setExIdx(Math.max(0, Math.min(exerciseNames.length - 1, idx)));
+
   const confirmSet = (setIdx) => {
     const d = draftFor(setIdx);
     logSet(sessionKey, exName, setIdx, d);
@@ -156,190 +141,201 @@ export default function SessionPage({ sessionKey, onExit }) {
     // Advance to the next exercise once this one is fully logged.
     const remaining = sets.filter((s, i) => i !== setIdx && !s.done).length;
     if (remaining === 0 && safeIdx < exerciseNames.length - 1) {
-      setTimeout(() => setExIdx(safeIdx + 1), 400);
+      setTimeout(() => goToExercise(safeIdx + 1), 400);
     }
+  };
+
+  const finishNow = () => {
+    finishSession(sessionKey);
+    onFinish(sessionKey);
   };
 
   const nextUnloggedIdx = sets.findIndex((s) => !s.done);
   const timerSeconds = getTimerSeconds(bankData, Math.max(0, nextUnloggedIdx));
+  const exerciseDone = nextUnloggedIdx === -1;
+  const hasNextExercise = safeIdx < exerciseNames.length - 1;
 
   return (
     <div className="max-w-lg mx-auto space-y-4 pb-40">
-      {/* Header */}
-      <div className="bg-iron-850 rounded-sm border border-iron-700 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            type="button"
-            onClick={onExit}
-            className="flex items-center gap-1.5 text-sm text-chalk-500 hover:text-plate-yellow font-medium"
-          >
-            <ArrowLeft className="w-4 h-4" /> Planner
-          </button>
-          <div className="stencil text-chalk-300">
-            {totalDone}/{totalSets} sets
+      {/* Progress */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => {
+            // Nothing logged yet — leaving now would just abandon a session
+            // with no way to clean it up later, so drop it instead of the
+            // user's real work.
+            if (totalDone === 0) deleteSession(sessionKey);
+            onExit();
+          }}
+          className="text-sm text-ink-muted hover:text-accent font-medium"
+        >
+          Today
+        </button>
+        <span className="text-sm font-medium text-accent">
+          {totalDone} of {totalSets} sets
+        </span>
+      </div>
+      <div className="h-1.5 bg-surface-wash rounded-full overflow-hidden">
+        <div
+          className="h-full bg-accent transition-all duration-300"
+          style={{ width: `${totalSets ? (totalDone / totalSets) * 100 : 0}%` }}
+        />
+      </div>
+      {wakeSupported && isHeld && (
+        <p className="text-xs text-ink-muted flex items-center gap-1">
+          <Smartphone className="w-3 h-3" /> Screen staying awake
+        </p>
+      )}
+
+      {/* Pager */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => goToExercise(safeIdx - 1)}
+          disabled={safeIdx === 0}
+          aria-label="Previous exercise"
+          className="w-8 h-8 rounded-full border border-border-control bg-surface text-ink-muted flex items-center justify-center disabled:opacity-30"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {exerciseNames.map((_, i) => (
+              <span
+                key={i}
+                className={`w-1.5 h-1.5 rounded-full ${i === safeIdx ? "bg-accent" : "bg-border-page"}`}
+              />
+            ))}
           </div>
+          <span className="text-xs text-ink-muted">
+            Exercise {safeIdx + 1} of {exerciseNames.length}
+          </span>
         </div>
-        <div className="h-1.5 bg-iron-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-plate-yellow transition-all duration-300"
-            style={{ width: `${totalSets ? (totalDone / totalSets) * 100 : 0}%` }}
-          />
-        </div>
-        {wakeSupported ? (
-          isHeld && (
-            <p className="text-xs text-chalk-500 mt-2 flex items-center gap-1">
-              <Smartphone className="w-3 h-3" /> Screen staying awake
-            </p>
-          )
-        ) : (
-          <p className="text-xs text-chalk-500 mt-2">
-            This browser can't keep the screen awake — check your auto-lock setting.
-          </p>
-        )}
+        <button
+          type="button"
+          onClick={() => goToExercise(safeIdx + 1)}
+          disabled={safeIdx === exerciseNames.length - 1}
+          aria-label="Next exercise"
+          className="w-8 h-8 rounded-full border border-border-control bg-surface text-ink-mid flex items-center justify-center disabled:opacity-30"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Exercise */}
-      <div className="bg-iron-850 rounded-sm border border-iron-700 p-5">
-        <div className="flex items-start justify-between gap-3 mb-1">
-          <h1 className="text-3xl font-display font-extrabold text-chalk-50 leading-none">
-            {exName}
-          </h1>
-          <span className="stencil whitespace-nowrap mt-1.5">
-            {String(safeIdx + 1).padStart(2, "0")} / {String(exerciseNames.length).padStart(2, "0")}
-          </span>
-        </div>
+      <div>
+        <h1 className="text-3xl leading-tight">{exName}</h1>
 
-        <div className="knurl my-3" aria-hidden="true" />
+        {cue && <p className="mt-1.5 text-sm text-ink-muted">{cue}</p>}
+
+        {(patternLabel || libraryEntry?.muscleGroups?.length > 0 || exerciseRest) && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {libraryEntry?.muscleGroups?.length > 0 && (
+              <span className="chip">{libraryEntry.muscleGroups.join(" · ")}</span>
+            )}
+            {patternLabel && <span className="chip">{patternLabel}</span>}
+            <span className="chip">Rest {Math.floor(exerciseRest / 60)}:{String(exerciseRest % 60).padStart(2, "0")}</span>
+          </div>
+        )}
 
         {bankData && !bankData.isHidden && (
-          <p className="text-sm text-chalk-500 font-data">
+          <p className="mt-2 text-xs text-ink-muted">
             Plan: {bankData.sets}×{formatReps(bankData.reps, bankData.repsUnit)}{" "}
             {formatWeight(bankData.weight, bankData.weightUnit)}
           </p>
         )}
-
-        {/* Last time */}
-        {last ? (
-          <div className="mt-3 text-sm bg-iron-900 border border-iron-700 rounded p-3">
-            <div className="stencil mb-1.5">
-              Last time · {friendlyDate(last.date)}
-              {daysAgo(last.date) > 0 && (
-                <span className="font-normal text-chalk-500">
-                  {" "}
-                  ({daysAgo(last.date)}d ago)
-                </span>
-              )}
-            </div>
-            <div className="text-chalk-200 font-data text-[13px]">
-              {last.sets
-                .map((s) => `${s.weight || "BW"}${s.weight ? s.weightUnit : ""}×${s.reps}`)
-                .join("  · ")}
-            </div>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-chalk-500 italic">
-            No history yet — this session becomes your baseline.
-          </p>
-        )}
-
-        {/* Overload suggestion */}
-        {suggestion && (
-          <div
-            className={`mt-3 text-sm rounded p-3 border flex items-start gap-2 ${
-              suggestion.action === "increase"
-                ? "bg-plate-green/10 border-plate-green/40 text-plate-green"
-                : "bg-plate-yellow/10 border-plate-yellow/40 text-plate-yellow"
-            }`}
-          >
-            <Lightbulb className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>{suggestion.reason}</span>
-          </div>
-        )}
-
-        {/* Warm-up ladder */}
-        {warmups.length > 0 && (
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => setShowWarmup((v) => !v)}
-              className="text-sm font-medium text-flag-orange hover:text-flag-orange flex items-center gap-1.5"
-            >
-              <Flame className="w-4 h-4" />
-              {showWarmup ? "Hide" : "Show"} warm-up ladder
-            </button>
-            {showWarmup && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {warmups.map((w, i) => (
-                  <span
-                    key={i}
-                    className="text-sm bg-flag-orange/10 border border-flag-orange/40 text-flag-orange rounded-sm px-3 py-1.5 font-medium"
-                  >
-                    {w.weight}
-                    {unit} × {w.reps}
-                  </span>
-                ))}
-                <span className="text-xs text-flag-orange self-center">
-                  not logged
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {timerSeconds > 0 && (
-          <div className="mt-3">
-            <ExerciseTimer totalSeconds={timerSeconds} />
-          </div>
-        )}
       </div>
 
+      {/* Last time */}
+      {last ? (
+        <div className="card p-4">
+          <div className="flex items-baseline justify-between">
+            <span className="stencil">Last time</span>
+            <span className="text-xs text-ink-muted">
+              {friendlyDate(last.date)}
+              {daysAgo(last.date) > 0 ? ` · ${daysAgo(last.date)}d ago` : ""}
+            </span>
+          </div>
+          <div className="mt-2 text-sm text-ink-soft">
+            {last.sets
+              .map((s) => `${s.weight || "BW"}${s.weight ? s.weightUnit : ""} × ${s.reps}`)
+              .join("  ·  ")}
+          </div>
+          {priorBest > 0 && (
+            <div className="mt-2.5 pt-2.5 border-t border-border flex justify-between text-xs">
+              <span className="text-ink-muted">Estimated 1RM</span>
+              <span className="text-accent font-medium">{Math.round(priorBest)} kg · best ever</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-ink-muted italic">
+          No history yet — this session becomes your baseline.
+        </p>
+      )}
+
+      {/* Overload suggestion */}
+      {suggestion && (
+        <div
+          className={`text-sm rounded-card p-3 flex items-start gap-2 ${
+            suggestion.action === "increase"
+              ? "bg-positive-bg text-positive-ink-strong"
+              : "bg-surface-wash text-ink-soft"
+          }`}
+        >
+          <Lightbulb className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{suggestion.reason}</span>
+        </div>
+      )}
+
+      {/* Warm-up ladder */}
+      {warmups.length > 0 && (
+        <div className="flex items-baseline gap-2 flex-wrap text-sm">
+          <span className="stencil flex items-center gap-1">
+            <Flame className="w-3.5 h-3.5" /> Warm-up
+          </span>
+          <span className="text-ink-soft">
+            {warmups.map((w) => `${w.weight}`).join(" · ")}
+            {unit}
+          </span>
+          <span className="aside text-ink-faint text-sm">not logged</span>
+        </div>
+      )}
+
+      {timerSeconds > 0 && (
+        <ExerciseTimer totalSeconds={timerSeconds} />
+      )}
+
       {/* Sets */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {sets.map((s, setIdx) => {
-          const d = draftFor(setIdx);
-          const isNext = setIdx === nextUnloggedIdx;
-          const est = e1rm(toKg(d.weight, s.weightUnit, 0), Number(d.reps));
+          const isPr =
+            s.done &&
+            priorBest > 0 &&
+            e1rm(toKg(s.weight, s.weightUnit, 0), Number(s.reps)) > priorBest * 1.001;
 
           if (s.done) {
-            // Three whites is a good lift; red flashes mean it beat your best.
-            const isPr =
-              priorBest > 0 &&
-              e1rm(toKg(s.weight, s.weightUnit, 0), Number(s.reps)) > priorBest * 1.001;
             return (
               <div
                 key={setIdx}
-                className="bg-iron-850 border-l-2 border-plate-green border-y border-r border-y-iron-800 border-r-iron-800 rounded-sm p-3 flex items-center gap-3"
+                className="flex items-center gap-3 bg-positive-bg rounded-card px-4 py-3"
               >
-                <div className="lights flex-shrink-0" aria-hidden="true">
-                  <span className={`light ${isPr ? "light-pr" : "light-on"}`} />
-                  <span className={`light ${isPr ? "light-pr" : "light-on"}`} />
-                  <span className={`light ${isPr ? "light-pr" : "light-on"}`} />
-                </div>
-                <div className="flex-1 flex items-baseline gap-2">
-                  <span className="readout text-2xl">
-                    {s.weight ? s.weight : "BW"}
-                    {s.weight && (
-                      <span className="text-sm text-chalk-500 font-body font-medium ml-0.5">
-                        {s.weightUnit}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-chalk-600">×</span>
-                  <span className="readout text-2xl">{s.reps}</span>
-                  {s.rpe && (
-                    <span className="stencil ml-1">RPE {s.rpe}</span>
-                  )}
-                  {isPr && (
-                    <span className="stencil text-plate-red ml-auto mr-1">
-                      Record
-                    </span>
-                  )}
-                </div>
+                <span className="w-5 h-5 rounded-full bg-positive-ink-strong flex items-center justify-center flex-shrink-0">
+                  <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                    <path d="M1 3L3 5L7 1" stroke="var(--color-positive-bg)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <span className="flex-1 text-positive-ink-strong">Set {setIdx + 1}</span>
+                <span className="font-medium text-positive-ink-strong">
+                  {s.weight ? `${s.weight}${s.weightUnit}` : "BW"} × {s.reps}
+                </span>
+                {isPr && <span className="text-xs font-medium text-accent">PR</span>}
                 <button
                   type="button"
                   onClick={() => unlogSet(sessionKey, exName, setIdx)}
                   aria-label={`Undo set ${setIdx + 1}`}
-                  className="p-2 text-chalk-500 hover:text-plate-red"
+                  className="text-positive-ink hover:text-accent"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -347,138 +343,81 @@ export default function SessionPage({ sessionKey, onExit }) {
             );
           }
 
-          if (!isNext) {
-            return (
-              <div
-                key={setIdx}
-                className="bg-iron-900/60 border border-iron-800 rounded-sm p-3 flex items-center gap-3"
-              >
-                <div className="lights flex-shrink-0" aria-hidden="true">
-                  <span className="light" />
-                  <span className="light" />
-                  <span className="light" />
-                </div>
-                <span className="stencil">
-                  Set {String(setIdx + 1).padStart(2, "0")}
-                  {s.targetReps ? ` · target ${s.targetReps}` : ""}
-                </span>
-              </div>
-            );
-          }
-
-          // The active set gets the full logging controls.
           return (
             <div
               key={setIdx}
-              className="bg-iron-850 border-2 border-plate-yellow rounded p-4"
+              className={`slot-empty flex items-center gap-3 px-4 py-3 ${
+                setIdx === nextUnloggedIdx ? "bg-accent/10!" : ""
+              }`}
             >
-              <div className="flex items-baseline justify-between mb-3">
-                <span className="font-bold text-chalk-50">Set {setIdx + 1}</span>
-                {s.targetReps && (
-                  <span className="text-sm text-chalk-500">
-                    target {s.targetReps} reps
-                  </span>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <Stepper
-                  label="Weight"
-                  value={d.weight}
-                  step={loadIncrement(s.weightUnit)}
-                  suffix={s.weightUnit}
-                  onChange={(v) => setDraftFor(setIdx, { weight: v })}
-                />
-                <Stepper
-                  label="Reps"
-                  value={d.reps}
-                  step={1}
-                  onChange={(v) => setDraftFor(setIdx, { reps: v })}
-                />
-                <Stepper
-                  label="RPE"
-                  value={d.rpe}
-                  step={0.5}
-                  min={0}
-                  onChange={(v) => setDraftFor(setIdx, { rpe: v })}
-                />
-              </div>
-
-              {est > 0 && (
-                <p className="stencil mt-3 text-center">
-                  ≈ {Math.round(est)}kg est. 1RM
-                  {priorBest > 0 && est > priorBest * 1.001 && (
-                    <span className="text-plate-red ml-1.5">· beats your best</span>
-                  )}
-                </p>
-              )}
-
-              <button
-                type="button"
-                onClick={() => confirmSet(setIdx)}
-                disabled={!d.reps || Number(d.reps) <= 0}
-                className="mt-3 w-full py-4 bg-plate-yellow text-iron-950 rounded-sm font-display font-extrabold text-xl uppercase tracking-wide hover:bg-plate-yellow-hot active:translate-y-px transition-all disabled:opacity-30 flex items-center justify-center gap-2"
-              >
-                <Check className="w-5 h-5" /> Log set
-              </button>
+              <span className="w-5 h-5 rounded-full border-[1.5px] border-border-page flex-shrink-0" />
+              <span className="flex-1 text-ink-muted">Set {setIdx + 1}</span>
+              <span className="text-ink-muted">
+                {s.targetReps ? `target ${s.targetReps}` : ""}
+              </span>
             </div>
           );
         })}
 
-        <button
-          type="button"
-          onClick={() => addSetTo(sessionKey, exName)}
-          className="w-full py-3 border border-dashed border-iron-600 rounded text-chalk-500 hover:text-plate-yellow hover:border-plate-yellow/60 font-medium flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" /> Add another set
-        </button>
+        <div className="flex items-center justify-between pt-1">
+          <button
+            type="button"
+            onClick={() => addSetTo(sessionKey, exName)}
+            className="text-sm font-medium text-ink-mid flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add a set
+          </button>
+          <button type="button" onClick={finishNow} className="text-sm font-medium text-ink-mid">
+            Finish session
+          </button>
+        </div>
       </div>
 
-      {/* Exercise nav */}
-      <div className="flex gap-2">
+      {exerciseDone && hasNextExercise && (
         <button
           type="button"
-          onClick={() => setExIdx(Math.max(0, safeIdx - 1))}
-          disabled={safeIdx === 0}
-          className="flex-1 py-3 bg-iron-850 border border-iron-600 rounded font-medium text-chalk-200 hover:bg-iron-800 disabled:opacity-40 flex items-center justify-center gap-2"
+          onClick={() => goToExercise(safeIdx + 1)}
+          className="btn-ink w-full py-4"
         >
-          <ArrowLeft className="w-4 h-4" /> Previous
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            setExIdx(Math.min(exerciseNames.length - 1, safeIdx + 1))
-          }
-          disabled={safeIdx === exerciseNames.length - 1}
-          className="flex-1 py-3 bg-iron-850 border border-iron-600 rounded font-medium text-chalk-200 hover:bg-iron-800 disabled:opacity-40 flex items-center justify-center gap-2"
-        >
-          Next <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {totalDone === totalSets && totalSets > 0 && (
-        <button
-          type="button"
-          onClick={() => {
-            finishSession(sessionKey);
-            onExit();
-          }}
-          className="w-full py-4 bg-plate-green text-white rounded-sm font-display font-extrabold text-xl uppercase tracking-wide hover:bg-plate-green/85 flex items-center justify-center gap-2"
-        >
-          <CheckCircle2 className="w-5 h-5" /> Finish workout
+          Next exercise — {exerciseNames[safeIdx + 1]}
         </button>
       )}
 
-      {/* Rest timer floats above everything */}
+      {totalDone === totalSets && totalSets > 0 && (
+        <button type="button" onClick={finishNow} className="btn-ink w-full py-4">
+          Finish workout
+        </button>
+      )}
+
+      {!exerciseDone && (
+        <SetEntryPanel
+          setIdx={nextUnloggedIdx}
+          s={sets[nextUnloggedIdx]}
+          d={draftFor(nextUnloggedIdx)}
+          est={e1rm(
+            toKg(draftFor(nextUnloggedIdx).weight, sets[nextUnloggedIdx].weightUnit, 0),
+            Number(draftFor(nextUnloggedIdx).reps)
+          )}
+          priorBest={priorBest}
+          onChange={(patch) => setDraftFor(nextUnloggedIdx, patch)}
+          onConfirm={() => confirmSet(nextUnloggedIdx)}
+          showRpe={settings.showRpe}
+        />
+      )}
+
+      {/* Rest timer floats above everything — bumped up over the sheet. */}
       {restStartedAt && (
-        <div className="fixed bottom-4 left-4 right-4 z-40 max-w-lg mx-auto">
+        <div
+          className={`fixed left-4 right-4 z-40 max-w-lg mx-auto ${
+            !exerciseDone ? "bottom-[150px]" : "bottom-4"
+          }`}
+        >
           <RestTimer
             startedAt={restStartedAt}
             seconds={restSeconds}
+            soundEnabled={settings.restSound}
             onDismiss={() => setRestStartedAt(null)}
-            onAdjust={(delta) =>
-              setRestSeconds((prev) => Math.max(15, prev + delta))
-            }
+            onAdjust={(delta) => setRestSeconds((prev) => Math.max(15, prev + delta))}
           />
         </div>
       )}

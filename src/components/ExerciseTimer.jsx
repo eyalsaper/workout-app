@@ -62,10 +62,10 @@ export default function ExerciseTimer({ totalSeconds }) {
 
   return (
     <div
-      className="flex items-center gap-3 mt-2 bg-iron-800 p-2 rounded-sm w-fit border border-iron-700"
+      className="flex items-center gap-3 mt-2 bg-surface-wash p-2 rounded-card w-fit"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="font-mono text-lg font-bold text-chalk-200 w-16 text-center">
+      <span className="readout text-lg w-16 text-center">
         {formatClock(timeLeft)}
       </span>
       <button
@@ -75,10 +75,8 @@ export default function ExerciseTimer({ totalSeconds }) {
           if (isRunning) stopHere();
           else start();
         }}
-        className={`px-3 py-1 text-sm font-medium rounded text-white ${
-          isRunning
-            ? "bg-flag-orange/100 hover:bg-flag-orange/85"
-            : "bg-plate-yellow hover:bg-plate-yellow-hot"
+        className={`px-3 py-1 text-sm font-medium rounded-card text-accent-ink ${
+          isRunning ? "bg-ink hover:bg-ink-hot" : "bg-accent hover:bg-accent-hot"
         }`}
       >
         {isRunning ? "Pause" : "Start"}
@@ -89,7 +87,7 @@ export default function ExerciseTimer({ totalSeconds }) {
           e.stopPropagation();
           reset();
         }}
-        className="px-2 py-1 text-sm text-chalk-500 hover:text-chalk-50 font-medium"
+        className="px-2 py-1 text-sm text-ink-muted hover:text-ink font-medium"
       >
         Reset
       </button>

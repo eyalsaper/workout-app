@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { useFirebaseSync } from "../hooks/useFirebaseSync";
 import { isRestEntry, cleanName, setCountFor, setDataFor } from "../lib/format";
-import { dateKey, sessionId, weekKeyFromDay } from "../lib/training";
+import { dateKey, sessionId, weekKey, weekKeyFromDay } from "../lib/training";
 import { EXERCISE_LIBRARY, libraryEntry } from "../lib/exerciseLibrary";
 import { useAuth } from "./AuthContext";
 import { userBasePath } from "../firebase";
@@ -78,6 +78,17 @@ const EMPTY_DETAIL = {
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+const DEFAULT_SETTINGS = {
+  bodyweightKg: "",
+  defaultRestSeconds: 90,
+  weightUnit: "KG",
+  plateIncrementKg: 2.5,
+  keepScreenAwake: true,
+  restSound: true,
+  showRpe: true,
+  onboarded: false,
+};
+
 export function WorkoutProvider({ children }) {
   // Every path is scoped to the signed-in account. This provider is only ever
   // mounted once a user exists, so the uid is stable for its whole lifetime.
@@ -92,7 +103,9 @@ export function WorkoutProvider({ children }) {
     `${base}/globalTracker`,
     DEFAULT_TRACKER
   );
-  const [globalTrackerChecked, setGlobalTrackerChecked, checkedReady] =
+  // Stored per week ({ [weekKey]: { [idx]: bool } }) so targets start
+  // unchecked again each week without anyone having to remember to reset them.
+  const [globalTrackerCheckedByWeek, setGlobalTrackerCheckedByWeek, checkedReady] =
     useFirebaseSync(`${base}/globalTrackerChecked`, {});
   const [exerciseDetails, setExerciseDetails, detailsReady] = useFirebaseSync(
     `${base}/exerciseDetails`,
@@ -106,9 +119,20 @@ export function WorkoutProvider({ children }) {
     `${base}/sessions`,
     {}
   );
-  const [settings, setSettings, settingsReady] = useFirebaseSync(
+  const [rawSettings, setSettings, settingsReady] = useFirebaseSync(
     `${base}/settings`,
-    { bodyweightKg: "", defaultRestSeconds: 90 }
+    DEFAULT_SETTINGS
+  );
+  // Existing accounts already have a settings node, so useFirebaseSync won't
+  // retroactively add new keys (it only seeds initialValue when the remote
+  // node is missing entirely) — merge here so every consumer sees a full object.
+  const settings = { ...DEFAULT_SETTINGS, ...rawSettings };
+
+  // Dated bodyweight entries, e.g. { "2026-08-20": 82.5 }. Supersedes the old
+  // single settings.bodyweightKg field for accounts that start logging it.
+  const [bodyweightLog, setBodyweightLog, bodyweightLogReady] = useFirebaseSync(
+    `${base}/bodyweightLog`,
+    {}
   );
 
   const isReady =
@@ -118,7 +142,8 @@ export function WorkoutProvider({ children }) {
     detailsReady &&
     plansReady &&
     sessionsReady &&
-    settingsReady;
+    settingsReady &&
+    bodyweightLogReady;
 
   const value = useMemo(() => {
     // ---- Exercise bank ----
@@ -185,63 +210,87 @@ export function WorkoutProvider({ children }) {
         return { ...prev, [exercise]: { ...exData, altSets } };
       });
 
-    // ---- Plans ----
-    const addPlan = () => {
-      const nextId = Math.max(0, ...Object.keys(plans).map(Number)) + 1;
-      const schedule = Array.from({ length: 7 }, (_, i) => ({
-        day: `Day ${i + 1}`,
-        exercises: ["Rest"],
-      }));
-      setPlans((prev) => ({ ...prev, [nextId]: schedule }));
-      return nextId;
+    /** First run: replace the primary plan's week with a starter template. */
+    const seedPlanFromTemplate = (templateDays) => {
+      const primaryPlanId = Math.min(...Object.keys(plans).map(Number));
+      setPlans((prev) => ({ ...prev, [primaryPlanId]: clone(templateDays) }));
+      setSettings((prevSettings) => ({ ...prevSettings, onboarded: true }));
     };
 
-    /** Deletes a plan and returns the id that should be selected next. */
-    const deletePlan = (planId) => {
-      const remaining = Object.keys(plans).filter((k) => Number(k) !== Number(planId));
-      if (remaining.length === 0) return Number(planId);
-
-      setPlans((prev) => {
-        const next = { ...prev };
-        delete next[planId];
-        return next;
-      });
-      // Sessions carry the plan id, so drop that plan's logged history too.
-      setSessions((prev) => {
-        const next = {};
-        Object.entries(prev).forEach(([id, session]) => {
-          if (Number(session?.planId) !== Number(planId)) next[id] = session;
-        });
-        return next;
-      });
-      return Number(remaining[0]);
-    };
-
-    const setExerciseAt = (planId, dayIdx, exIdx, newName) =>
-      setPlans((prev) => {
-        const next = clone(prev);
-        const day = next[planId][dayIdx];
-        day.exercises = day.exercises || [];
-        day.exercises[exIdx] = newName;
-        return next;
-      });
-
-    const addExerciseTo = (planId, dayIdx) =>
-      setPlans((prev) => {
-        const next = clone(prev);
-        const day = next[planId][dayIdx];
-        day.exercises = [...(day.exercises || []), ""];
-        return next;
-      });
+    const dismissFirstRun = () =>
+      setSettings((prevSettings) => ({ ...prevSettings, onboarded: true }));
 
     const removeExerciseFrom = (planId, dayIdx, exIdx) =>
       setPlans((prev) => {
         const next = clone(prev);
         const day = next[planId][dayIdx];
-        const remaining = (day.exercises || []).filter((_, i) => i !== exIdx);
-        day.exercises = remaining.length === 0 ? ["Rest"] : remaining;
+        // Emptying a day leaves it Open, not Rest — Rest is a deliberate choice.
+        day.exercises = (day.exercises || []).filter((_, i) => i !== exIdx);
         return next;
       });
+
+    /** true -> a deliberate Rest day; false -> Open (nothing planned yet). */
+    const setDayRest = (planId, dayIdx, isRest) =>
+      setPlans((prev) => {
+        const next = clone(prev);
+        next[planId][dayIdx].exercises = isRest ? ["Rest"] : [];
+        return next;
+      });
+
+    const reorderExercise = (planId, dayIdx, fromIdx, toIdx) =>
+      setPlans((prev) => {
+        const next = clone(prev);
+        const day = next[planId][dayIdx];
+        const exercises = day.exercises || [];
+        if (toIdx < 0 || toIdx >= exercises.length) return prev;
+        const [moved] = exercises.splice(fromIdx, 1);
+        exercises.splice(toIdx, 0, moved);
+        return next;
+      });
+
+    /** Appends a movement from the Library to a day, clearing a bare Rest slot. */
+    const appendExerciseToDay = (planId, dayIdx, name) =>
+      setPlans((prev) => {
+        const next = clone(prev);
+        const day = next[planId][dayIdx];
+        const existing = (day.exercises || []).filter((ex) => !isRestEntry(ex));
+        day.exercises = [...existing, name];
+        return next;
+      });
+
+    const setDayNote = (planId, dayIdx, note) =>
+      setPlans((prev) => {
+        const next = clone(prev);
+        next[planId][dayIdx].note = note;
+        return next;
+      });
+
+    const setDayProgression = (planId, dayIdx, patch) =>
+      setPlans((prev) => {
+        const next = clone(prev);
+        const day = next[planId][dayIdx];
+        day.progression = { auto: true, incrementKg: 2.5, ...day.progression, ...patch };
+        return next;
+      });
+
+    /** Which days (across all plans) include this exercise, for "Appears in". */
+    const exerciseAppearsIn = (exName) => {
+      const results = [];
+      Object.entries(plans).forEach(([planId, days]) => {
+        (days || []).forEach((day, dayIdx) => {
+          const match = (day.exercises || []).some(
+            (ex) => !isRestEntry(ex) && cleanName(ex) === exName
+          );
+          if (match) {
+            results.push({ planId: Number(planId), dayIdx, dayLabel: day.name });
+          }
+        });
+      });
+      return results;
+    };
+
+    // ---- The single active plan (no plan-switcher UI) ----
+    const primaryPlanId = Math.min(...Object.keys(plans).map(Number));
 
     // ---- Daily progress ----
     const getDayTotalSets = (planId, dayIdx) => {
@@ -255,11 +304,18 @@ export function WorkoutProvider({ children }) {
       }, 0);
     };
 
-    // ---- Global tracker ----
-    const toggleTrackerItem = (idx) =>
-      setGlobalTrackerChecked((prev) => ({ ...prev, [idx]: !prev[idx] }));
+    // ---- Weekly targets — checked state is scoped to the current week ----
+    const thisWeek = weekKey();
+    const globalTrackerChecked = globalTrackerCheckedByWeek[thisWeek] || {};
 
-    const resetTracker = () => setGlobalTrackerChecked({});
+    const toggleTrackerItem = (idx) =>
+      setGlobalTrackerCheckedByWeek((prev) => ({
+        ...prev,
+        [thisWeek]: { ...(prev[thisWeek] || {}), [idx]: !(prev[thisWeek] || {})[idx] },
+      }));
+
+    const resetTracker = () =>
+      setGlobalTrackerCheckedByWeek((prev) => ({ ...prev, [thisWeek]: {} }));
 
     const updateTrackerItem = (idx, text) =>
       setGlobalTracker((prev) => {
@@ -302,8 +358,25 @@ export function WorkoutProvider({ children }) {
         };
       });
 
+    // ---- Body weight ----
+    const bodyweightDates = Object.keys(bodyweightLog).sort();
+    const latestBodyweightDate = bodyweightDates[bodyweightDates.length - 1];
+    const bodyweightKg =
+      (latestBodyweightDate && parseFloat(bodyweightLog[latestBodyweightDate])) ||
+      parseFloat(settings?.bodyweightKg) ||
+      0;
+
+    const logBodyweight = (day, kg) =>
+      setBodyweightLog((prev) => ({ ...prev, [day]: kg }));
+
+    const removeBodyweightEntry = (day) =>
+      setBodyweightLog((prev) => {
+        const next = { ...prev };
+        delete next[day];
+        return next;
+      });
+
     // ---- Sessions: the training log, and now the source of truth ----
-    const bodyweightKg = parseFloat(settings?.bodyweightKg) || 0;
 
     /** The set list a fresh session starts with, seeded from the plan. */
     const buildEntries = (planId, dayIndex) => {
@@ -337,9 +410,28 @@ export function WorkoutProvider({ children }) {
     const getSession = (planId, dayIndex, day = dateKey()) =>
       sessions[sessionId(day, planId, dayIndex)] || null;
 
+    /**
+     * Resumes this week's unfinished session for this plan-day if one
+     * exists — no matter which real date it was started on, since you can
+     * now open any day from Today, not just today's own slot — otherwise
+     * starts a fresh one dated today.
+     */
     const startSession = (planId, dayIndex) => {
+      const week = weekKeyFromDay(dateKey());
+      const resumable = Object.entries(sessions).find(
+        ([, s]) =>
+          Number(s?.planId) === Number(planId) &&
+          Number(s?.dayIndex) === Number(dayIndex) &&
+          s?.date &&
+          weekKeyFromDay(s.date) === week &&
+          !s.finishedAt
+      );
+      if (resumable) return resumable[0];
+
       const day = dateKey();
       const id = sessionId(day, planId, dayIndex);
+      // Only seed a blank session if today doesn't already have one under
+      // this exact id — never overwrite an existing (even finished) one.
       if (!sessions[id]) {
         setSessions((prev) => ({
           ...prev,
@@ -423,6 +515,13 @@ export function WorkoutProvider({ children }) {
         return { ...prev, [id]: { ...session, finishedAt: Date.now(), note } };
       });
 
+    const updateSessionNote = (id, note) =>
+      setSessions((prev) => {
+        const session = prev[id];
+        if (!session) return prev;
+        return { ...prev, [id]: { ...session, note } };
+      });
+
     const deleteSession = (id) =>
       setSessions((prev) => {
         const next = { ...prev };
@@ -487,6 +586,9 @@ export function WorkoutProvider({ children }) {
       sessions,
       settings,
       bodyweightKg,
+      bodyweightLog,
+      logBodyweight,
+      removeBodyweightEntry,
       setSettings,
       getSession,
       startSession,
@@ -494,6 +596,7 @@ export function WorkoutProvider({ children }) {
       unlogSet,
       addSetTo,
       finishSession,
+      updateSessionNote,
       deleteSession,
       getLastPerformance,
       isDayDoneThisWeek,
@@ -501,6 +604,7 @@ export function WorkoutProvider({ children }) {
       isExerciseLogged,
       exerciseBank,
       plans,
+      primaryPlanId,
       globalTracker,
       globalTrackerChecked,
       exerciseDetails,
@@ -509,11 +613,15 @@ export function WorkoutProvider({ children }) {
       removeBankExercise,
       updateBankField,
       updateAltSet,
-      addPlan,
-      deletePlan,
-      setExerciseAt,
-      addExerciseTo,
       removeExerciseFrom,
+      reorderExercise,
+      appendExerciseToDay,
+      setDayRest,
+      setDayNote,
+      setDayProgression,
+      exerciseAppearsIn,
+      seedPlanFromTemplate,
+      dismissFirstRun,
       getDayTotalSets,
       toggleTrackerItem,
       resetTracker,
@@ -530,17 +638,19 @@ export function WorkoutProvider({ children }) {
     exerciseBank,
     plans,
     globalTracker,
-    globalTrackerChecked,
+    globalTrackerCheckedByWeek,
     exerciseDetails,
     sessions,
-    settings,
+    rawSettings,
+    bodyweightLog,
     setSessions,
     setSettings,
     setExerciseBank,
     setPlans,
     setGlobalTracker,
-    setGlobalTrackerChecked,
+    setGlobalTrackerCheckedByWeek,
     setExerciseDetails,
+    setBodyweightLog,
   ]);
 
   return (

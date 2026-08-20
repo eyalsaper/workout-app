@@ -1,79 +1,85 @@
 import React, { useState } from "react";
-import {
-  CalendarDays,
-  ListOrdered,
-  Loader2,
-  Plus,
-  ShieldCheck,
-  TrendingUp,
-} from "lucide-react";
+import { Loader2, Settings } from "lucide-react";
 import { WorkoutProvider, useWorkout } from "./state/WorkoutContext";
 import { AuthProvider, useAuth } from "./state/AuthContext";
 import SignInScreen from "./components/SignInScreen";
-import AccountPage from "./pages/AccountPage";
-import ConfirmDialog from "./components/ConfirmDialog";
-import PlannerPage from "./pages/PlannerPage";
+import BottomNav from "./components/BottomNav";
+import TodayPage from "./pages/TodayPage";
+import WeekPlannerPage from "./pages/WeekPlannerPage";
+import RoutineEditorPage from "./pages/RoutineEditorPage";
 import SessionPage from "./pages/SessionPage";
+import SessionSummaryPage from "./pages/SessionSummaryPage";
 import ProgressPage from "./pages/ProgressPage";
-import ExerciseBankPage from "./pages/ExerciseBankPage";
-import DetailPage from "./pages/DetailPage";
+import LiftHistoryPage from "./pages/LiftHistoryPage";
+import LibraryPage from "./pages/LibraryPage";
+import MovementDetailPage from "./pages/MovementDetailPage";
+import SettingsPage from "./pages/SettingsPage";
+import FirstRunPage from "./pages/FirstRunPage";
 import { isRestEntry } from "./lib/format";
 
-// This file now only decides which screen is showing. All the data lives in
+// This file only decides which screen is showing. All the data lives in
 // WorkoutContext, and each screen owns its own markup.
 
 function Shell() {
   const {
     isReady,
+    settings,
+    sessions,
     exerciseBank,
-    plans,
-    addPlan,
-    deletePlan,
+    primaryPlanId,
     ensureDetail,
     startSession,
   } = useWorkout();
 
-  const [activePage, setActivePage] = useState("planner");
-  const [selectedPlan, setSelectedPlan] = useState(1);
+  const [activePage, setActivePage] = useState("today");
   const [activeSessionKey, setActiveSessionKey] = useState(null);
-  const [detailExercise, setDetailExercise] = useState(null);
-  const [pageBeforeDetail, setPageBeforeDetail] = useState("planner");
-  const [isEditing, setIsEditing] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [finishedSessionKey, setFinishedSessionKey] = useState(null);
+  const [routineDayIdx, setRoutineDayIdx] = useState(null);
+  const [movementName, setMovementName] = useState(null);
+  const [pageBeforeMovement, setPageBeforeMovement] = useState("today");
+  const [pageBeforeSettings, setPageBeforeSettings] = useState("today");
 
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-iron-950 flex flex-col items-center justify-center text-plate-yellow gap-4">
+      <div className="min-h-screen bg-surface-page flex flex-col items-center justify-center text-accent gap-4">
         <Loader2 className="w-8 h-8 animate-spin" />
         <p className="stencil">Loading your training</p>
       </div>
     );
   }
 
-  const openDetail = (name) => {
+  const showFirstRun = !settings.onboarded && Object.keys(sessions).length === 0;
+  if (showFirstRun) {
+    return <FirstRunPage />;
+  }
+
+  const openMovement = (name) => {
     if (isRestEntry(name)) return;
     const exName = name.trim();
     ensureDetail(exName);
-    setDetailExercise(exName);
-    setPageBeforeDetail(activePage);
-    setActivePage("detail");
+    setMovementName(exName);
+    setPageBeforeMovement(activePage);
+    setActivePage("movementDetail");
   };
 
   const startDay = (dayIdx) => {
-    setActiveSessionKey(startSession(selectedPlan, dayIdx));
+    setActiveSessionKey(startSession(primaryPlanId, dayIdx));
     setActivePage("session");
   };
 
-  const confirmDelete = () => {
-    setSelectedPlan(deletePlan(selectedPlan));
-    setIsEditing(false);
-    setShowDeleteConfirm(false);
+  const finishToSummary = (sessionKey) => {
+    setActiveSessionKey(null);
+    setFinishedSessionKey(sessionKey);
+    setActivePage("sessionSummary");
   };
 
-  const showPlanTabs = activePage === "planner";
+  const openRoutineEditor = (dayIdx) => {
+    setRoutineDayIdx(dayIdx);
+    setActivePage("routineEditor");
+  };
 
   return (
-    <div className="min-h-screen bg-iron-950 text-chalk-50 p-3 sm:p-6">
+    <div className="min-h-screen bg-surface-page text-ink p-3 sm:p-6 pb-24">
       {/* Powers the autocomplete on every exercise name input. */}
       <datalist id="exercise-bank-list">
         {Object.keys(exerciseBank)
@@ -83,105 +89,51 @@ function Shell() {
           ))}
       </datalist>
 
-      {showDeleteConfirm && (
-        <ConfirmDialog
-          title={`Delete Plan ${selectedPlan}?`}
-          message="This deletes the plan and its checked-off sets. It cannot be undone."
-          confirmLabel="Delete Plan"
-          onConfirm={confirmDelete}
-          onCancel={() => setShowDeleteConfirm(false)}
-        />
-      )}
-
       <div className="max-w-6xl mx-auto space-y-6">
-        <nav className="bg-iron-850 rounded-sm p-2 border border-iron-700 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setActivePage("planner")}
-            className={`flex-1 py-2.5 rounded-sm font-display font-bold uppercase tracking-wide text-sm flex items-center justify-center gap-1.5 transition-all ${
-              activePage === "planner" || activePage === "session"
-                ? "bg-plate-yellow text-iron-950 shadow-lg shadow-black/50"
-                : "text-chalk-300 hover:bg-iron-800"
-            }`}
+        <div className="flex items-center justify-between">
+          <div
+            className="text-lg font-extrabold tracking-wide"
+            style={{ fontFamily: "var(--font-heading)" }}
           >
-            <CalendarDays className="w-4 h-4" /> Planner
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePage("history")}
-            className={`flex-1 py-2.5 rounded-sm font-display font-bold uppercase tracking-wide text-sm flex items-center justify-center gap-1.5 transition-all ${
-              activePage === "history"
-                ? "bg-plate-yellow text-iron-950 shadow-lg shadow-black/50"
-                : "text-chalk-300 hover:bg-iron-800"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" /> Progress
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePage("progress")}
-            className={`flex-1 py-2.5 rounded-sm font-display font-bold uppercase tracking-wide text-sm flex items-center justify-center gap-1.5 transition-all ${
-              activePage === "progress"
-                ? "bg-plate-yellow text-iron-950 shadow-lg shadow-black/50"
-                : "text-chalk-300 hover:bg-iron-800"
-            }`}
-          >
-            <ListOrdered className="w-4 h-4" /> Bank
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePage("account")}
-            aria-label="Account"
-            className={`px-3 py-2.5 rounded-sm transition-all flex items-center justify-center ${
-              activePage === "account"
-                ? "bg-plate-yellow text-iron-950 shadow-lg shadow-black/50"
-                : "text-chalk-300 hover:bg-iron-800"
-            }`}
-          >
-            <ShieldCheck className="w-5 h-5" />
-          </button>
-        </nav>
-
-        {showPlanTabs && (
-          <div className="flex flex-wrap gap-2 bg-iron-800 p-1.5 rounded w-fit mx-auto justify-center">
-            {Object.keys(plans).map((num) => (
-              <button
-                type="button"
-                key={num}
-                onClick={() => {
-                  setSelectedPlan(Number(num));
-                  setIsEditing(false);
-                }}
-                className={`px-6 sm:px-8 py-2 rounded-sm font-display font-bold uppercase tracking-wide transition-all ${
-                  selectedPlan === Number(num)
-                    ? "bg-plate-yellow text-iron-950"
-                    : "text-chalk-300 hover:text-chalk-50 hover:bg-iron-700"
-                }`}
-              >
-                Plan {num}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPlan(addPlan());
-                setIsEditing(true);
-              }}
-              className="px-4 py-2 rounded-sm font-medium text-chalk-300 hover:text-chalk-50 hover:bg-iron-700 transition-all flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" /> Add Plan
-            </button>
+            Iron Log
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (activePage !== "settings") setPageBeforeSettings(activePage);
+              setActivePage("settings");
+            }}
+            aria-label="Settings"
+            className={`pill-outline flex items-center gap-1.5 transition-colors ${
+              activePage === "settings" ? "bg-ink text-accent-ink border-ink" : ""
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Settings
+          </button>
+        </div>
+
+        {activePage === "today" && (
+          <TodayPage
+            onStartDay={startDay}
+            onOpenDetail={openMovement}
+            onManagePlan={() => setActivePage("weekPlanner")}
+          />
         )}
 
-        {activePage === "planner" && (
-          <PlannerPage
-            selectedPlan={selectedPlan}
-            isEditing={isEditing}
-            onToggleEditing={() => setIsEditing((v) => !v)}
+        {activePage === "weekPlanner" && (
+          <WeekPlannerPage
             onStartDay={startDay}
-            onOpenDetail={openDetail}
-            onRequestDelete={() => setShowDeleteConfirm(true)}
+            onEditDay={openRoutineEditor}
+            onBack={() => setActivePage("today")}
+          />
+        )}
+
+        {activePage === "routineEditor" && routineDayIdx !== null && (
+          <RoutineEditorPage
+            dayIdx={routineDayIdx}
+            onOpenDetail={openMovement}
+            onBack={() => setActivePage("weekPlanner")}
           />
         )}
 
@@ -190,34 +142,64 @@ function Shell() {
             sessionKey={activeSessionKey}
             onExit={() => {
               setActiveSessionKey(null);
-              setActivePage("planner");
+              setActivePage("today");
+            }}
+            onFinish={finishToSummary}
+          />
+        )}
+
+        {activePage === "sessionSummary" && finishedSessionKey && (
+          <SessionSummaryPage
+            sessionKey={finishedSessionKey}
+            onClose={() => {
+              setFinishedSessionKey(null);
+              setActivePage("today");
             }}
           />
         )}
 
-        {activePage === "history" && <ProgressPage />}
-
-        {activePage === "progress" && <ExerciseBankPage />}
-
-        {activePage === "account" && <AccountPage />}
-
-        {activePage === "detail" && detailExercise && (
-          <DetailPage
-            exerciseName={detailExercise}
-            onBack={() => {
-              setActivePage(pageBeforeDetail);
-              setDetailExercise(null);
+        {activePage === "history" && (
+          <ProgressPage
+            onOpenLift={(name) => {
+              setMovementName(name);
+              setActivePage("liftHistory");
             }}
+          />
+        )}
+
+        {activePage === "liftHistory" && movementName && (
+          <LiftHistoryPage
+            exerciseName={movementName}
+            onBack={() => setActivePage("history")}
+          />
+        )}
+
+        {activePage === "library" && <LibraryPage onOpenDetail={openMovement} />}
+
+        {activePage === "settings" && (
+          <SettingsPage onBack={() => setActivePage(pageBeforeSettings)} />
+        )}
+
+        {activePage === "movementDetail" && movementName && (
+          <MovementDetailPage
+            exerciseName={movementName}
+            onBack={() => {
+              setActivePage(pageBeforeMovement);
+              setMovementName(null);
+            }}
+            onSeeHistory={() => setActivePage("liftHistory")}
           />
         )}
       </div>
+
+      <BottomNav activePage={activePage} onNavigate={setActivePage} />
     </div>
   );
 }
 
 function LoadingScreen({ message }) {
   return (
-    <div className="min-h-screen bg-iron-950 flex flex-col items-center justify-center text-plate-yellow gap-4">
+    <div className="min-h-screen bg-surface-page flex flex-col items-center justify-center text-accent gap-4">
       <Loader2 className="w-8 h-8 animate-spin" />
       <p className="stencil">{message}</p>
     </div>

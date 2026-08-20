@@ -21,7 +21,7 @@ export default function ExerciseLabel({ name, onOpenDetail }) {
   const { exerciseBank, exerciseDetails } = useWorkout();
 
   if (isRestEntry(name)) {
-    return <span className="text-chalk-500 italic">{name || "Rest"}</span>;
+    return <span className="text-ink-muted italic">{name || "Rest"}</span>;
   }
 
   const exName = cleanName(name);
@@ -44,8 +44,8 @@ export default function ExerciseLabel({ name, onOpenDetail }) {
           onClick={() => onOpenDetail(exName)}
           title={`Open notes for ${exName}`}
           aria-label={`Open notes for ${exName}`}
-          className={`p-1 -m-0.5 rounded-full transition-colors hover:bg-plate-yellow/20 ${
-            hasNotes ? "text-plate-yellow" : "text-chalk-600 hover:text-plate-yellow"
+          className={`p-1 -m-0.5 rounded-full transition-colors hover:bg-accent/20 ${
+            hasNotes ? "text-accent" : "text-ink-faint hover:text-accent"
           }`}
         >
           <Info className="w-4 h-4" />
@@ -60,7 +60,7 @@ export default function ExerciseLabel({ name, onOpenDetail }) {
       </div>
 
       {showBankSummary && bankData.isAlternative && (
-        <div className="flex flex-col pl-3 mt-1 space-y-0.5 text-sm border-l-2 border-iron-700 opacity-70">
+        <div className="flex flex-col pl-3 mt-1 space-y-0.5 text-sm border-l-2 border-border opacity-70">
           {Array.from({ length: setCountFor(bankData) }).map((_, i) => {
             const s = setDataFor(bankData, i);
             return (

@@ -17,29 +17,30 @@ export default function Stepper({ label, value, onChange, step = 1, min = 0, suf
 
   return (
     <div className="flex-1">
-      <div className="text-xs font-semibold uppercase tracking-wide text-chalk-500 mb-1.5 text-center">
+      <div className="stencil mb-1.5 text-center">
         {label}
       </div>
-      <div className="flex items-stretch">
+      <div className="bg-surface-inset rounded-inset p-2.5 flex items-center justify-center gap-2">
         <button
           type="button"
           onClick={() => bump(-step)}
           aria-label={`Decrease ${label}`}
-          className="px-3 bg-iron-800 hover:bg-iron-800 active:bg-iron-600 border border-iron-600 rounded-l-lg text-chalk-200 flex items-center"
+          className="w-[29px] h-[29px] rounded-full bg-surface border border-border-control text-ink-mid flex items-center justify-center flex-shrink-0"
         >
-          <Minus className="w-4 h-4" />
+          <Minus className="w-3.5 h-3.5" />
         </button>
-        <div className="flex-1 relative">
+        <div className="relative min-w-0">
           <input
             type="number"
             inputMode="decimal"
             aria-label={label}
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full h-full min-w-0 p-3 text-center text-xl font-bold border-y border-iron-600 focus:ring-2 focus:ring-plate-yellow focus:outline-none bg-iron-850 text-chalk-50"
+            className="w-full min-w-0 bg-transparent text-center readout text-2xl focus:outline-none"
+            style={{ maxWidth: "3.2em" }}
           />
           {suffix && (
-            <span className="absolute right-2 bottom-1 text-[10px] text-chalk-500 pointer-events-none">
+            <span className="absolute -right-3 bottom-0 text-[10px] text-ink-muted pointer-events-none">
               {suffix}
             </span>
           )}
@@ -48,9 +49,9 @@ export default function Stepper({ label, value, onChange, step = 1, min = 0, suf
           type="button"
           onClick={() => bump(step)}
           aria-label={`Increase ${label}`}
-          className="px-3 bg-iron-800 hover:bg-iron-800 active:bg-iron-600 border border-iron-600 rounded-r-lg text-chalk-200 flex items-center"
+          className="w-[29px] h-[29px] rounded-full bg-surface border border-border-control text-ink-mid flex items-center justify-center flex-shrink-0"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

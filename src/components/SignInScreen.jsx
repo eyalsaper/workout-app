@@ -29,20 +29,20 @@ export default function SignInScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-iron-900 flex items-center justify-center p-4">
-      <div className="bg-iron-850 rounded-sm border border-iron-700 p-8 w-full max-w-sm">
+    <div className="min-h-screen bg-surface-page flex items-center justify-center p-4">
+      <div className="card-hero p-8 w-full max-w-sm">
         <div className="mb-1">
           <div className="stencil mb-2 flex items-center gap-2">
             <Dumbbell className="w-3.5 h-3.5" /> Training log
           </div>
-          <h1 className="text-5xl font-display font-extrabold text-chalk-50 leading-[0.85]">
+          <h1 className="text-5xl leading-[0.95]">
             Iron
             <br />
-            <span className="text-plate-yellow">Log</span>
+            <span className="text-accent">Log</span>
           </h1>
-          <div className="knurl my-4" aria-hidden="true" />
+          <div className="border-b border-border my-4" aria-hidden="true" />
         </div>
-        <p className="text-chalk-500 text-sm mb-6">
+        <p className="text-ink-muted text-sm mb-6">
           {isCreating
             ? "Create the account your training syncs to."
             : "Sign in to load your training on this device."}
@@ -63,7 +63,7 @@ export default function SignInScreen() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
-              className="w-full p-3 border border-iron-600 rounded-sm focus:ring-2 focus:ring-plate-yellow focus:outline-none"
+              className="w-full p-3 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
             />
           </div>
 
@@ -81,12 +81,12 @@ export default function SignInScreen() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
-              className="w-full p-3 border border-iron-600 rounded-sm focus:ring-2 focus:ring-plate-yellow focus:outline-none"
+              className="w-full p-3 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-plate-red bg-plate-red/10 border border-plate-red/40 rounded-sm p-3">
+            <p className="text-sm text-negative bg-negative/10 border border-negative/40 rounded-card p-3">
               {error}
             </p>
           )}
@@ -95,7 +95,7 @@ export default function SignInScreen() {
             type="button"
             onClick={submit}
             disabled={isBusy}
-            className="w-full py-3 bg-plate-yellow text-iron-950 rounded-sm font-semibold hover:bg-plate-yellow-hot transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            className="btn-ink w-full py-3 disabled:opacity-60"
           >
             {isBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             {isCreating ? "Create account" : "Sign in"}
@@ -107,7 +107,7 @@ export default function SignInScreen() {
               setIsCreating((v) => !v);
               setError("");
             }}
-            className="w-full text-sm text-chalk-500 hover:text-plate-yellow font-medium"
+            className="w-full text-sm text-ink-muted hover:text-accent font-medium"
           >
             {isCreating
               ? "I already have an account"

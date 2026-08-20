@@ -1,8 +1,8 @@
 /**
  * Stock exercise library.
  *
- * `pattern` picks the form animation, so it has to be one of the patterns
- * ExerciseAnimation knows about. `cues` are the two or three things that
+ * `pattern` groups exercises by movement (used for the pattern tag and the
+ * Push/Pull/Legs/Core classifier). `cues` are the two or three things that
  * actually go wrong on that lift — not a full description, which nobody reads
  * between sets.
  *
@@ -358,4 +358,38 @@ export function guessPattern(name) {
     if (re.test(n)) return pattern;
   }
   return "default";
+}
+
+const PUSH_PATTERNS = ["horizontal-push", "vertical-push", "tricep-extension", "lateral-raise"];
+const PULL_PATTERNS = ["horizontal-pull", "vertical-pull", "curl"];
+const LEG_PATTERNS = ["squat", "hinge", "lunge", "calf-raise", "hip-thrust"];
+const CORE_PATTERNS = ["plank", "crunch"];
+
+/** Push / Pull / Legs / Core, for the Library's filter chips. */
+export function categoryFor(pattern) {
+  if (PUSH_PATTERNS.includes(pattern)) return "Push";
+  if (PULL_PATTERNS.includes(pattern)) return "Pull";
+  if (LEG_PATTERNS.includes(pattern)) return "Legs";
+  if (CORE_PATTERNS.includes(pattern)) return "Core";
+  return "Push";
+}
+
+/** Barbell / Dumbbell / Cable / Machine / Bodyweight, for grouping the Library. */
+export function equipmentFor(name, weightUnit) {
+  const n = (name || "").toLowerCase();
+  if (weightUnit === "Body Wt.") return "Bodyweight";
+  if (/dumbbell|\bdb\b/.test(n)) return "Dumbbell";
+  if (/cable/.test(n)) return "Cable";
+  if (/(machine|leg press|hack squat|pulldown|leg curl|leg extension|chest press)/.test(n))
+    return "Machine";
+  if (/(barbell|deadlift|squat|bench press|overhead press|row|good morning|hip thrust)/.test(n))
+    return "Barbell";
+  return "Other";
+}
+
+export const EQUIPMENT_OPTIONS = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight", "Other"];
+
+/** The exercise's equipment: an explicit bank override, or the name-based guess. */
+export function resolveEquipment(bankData, name) {
+  return bankData?.equipment || equipmentFor(name, bankData?.weightUnit);
 }
