@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronLeft, Download, LogOut, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, LogOut, Trash2 } from "lucide-react";
 import { useAuth } from "../state/AuthContext";
 import { useWorkout } from "../state/WorkoutContext";
 import { sessionsToCsv, downloadTextFile } from "../lib/csv";
@@ -77,10 +77,18 @@ function BodyweightLog() {
   );
 }
 
-export default function SettingsPage({ onBack }) {
+const THEME_OPTIONS = [
+  { value: "paper", label: "Paper" },
+  { value: "night", label: "Night" },
+  { value: "system", label: "Match device" },
+];
+
+export default function SettingsPage({ onBack, onOpenLibrary }) {
   const { user, signOut } = useAuth();
-  const { settings, setSettings, sessions } = useWorkout();
+  const { settings, setSettings, sessions, exerciseBank } = useWorkout();
   const [showBodyweight, setShowBodyweight] = useState(false);
+
+  const exerciseCount = Object.keys(exerciseBank).filter((n) => !exerciseBank[n].isHidden).length;
 
   const weeksLogged = new Set(
     Object.values(sessions)
@@ -104,6 +112,26 @@ export default function SettingsPage({ onBack }) {
         </button>
         <h1 className="mt-2.5 text-4xl">Settings</h1>
         <p className="mt-1.5 text-sm text-ink-muted">Signed in as {user.email}</p>
+      </div>
+
+      <div>
+        <div className="stencil mb-2">Appearance</div>
+        <div className="card p-3">
+          <div className="flex gap-1 bg-surface-inset rounded-pill p-0.5">
+            {THEME_OPTIONS.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setSettings({ ...settings, theme: t.value })}
+                className={`flex-1 px-3 py-1.5 rounded-pill text-xs font-medium ${
+                  (settings.theme ?? "system") === t.value ? "bg-ink text-accent-ink" : "text-ink-faint"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div>
@@ -135,6 +163,22 @@ export default function SettingsPage({ onBack }) {
               className="w-16 text-right bg-transparent focus:outline-none text-sm font-medium text-ink-mid"
             />
           </SettingsRow>
+          <SettingsRow label="Sex">
+            <div className="flex gap-1 bg-surface-inset rounded-pill p-0.5">
+              {["male", "female"].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSettings({ ...settings, sex: s })}
+                  className={`px-3 py-1 rounded-pill text-xs font-medium capitalize ${
+                    settings.sex === s ? "bg-ink text-accent-ink" : "text-ink-faint"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </SettingsRow>
           <SettingsRow label="Plate increment">
             <div className="flex items-center gap-1.5">
               <input
@@ -148,6 +192,9 @@ export default function SettingsPage({ onBack }) {
             </div>
           </SettingsRow>
         </div>
+        <p className="mt-2 text-xs text-ink-faint">
+          Sex only picks which strength-standard table shows in the record book — nothing else reads it.
+        </p>
       </div>
 
       <div>
@@ -177,6 +224,10 @@ export default function SettingsPage({ onBack }) {
       <div>
         <div className="stencil mb-2">Your data</div>
         <div className="card">
+          <button type="button" onClick={onOpenLibrary} className="w-full p-4 flex items-center justify-between border-b border-border text-left">
+            <span className="text-sm text-ink-soft">Exercises · {exerciseCount} in the bank</span>
+            <ChevronRight className="w-4 h-4 text-ink-faint" />
+          </button>
           <button type="button" onClick={exportCsv} className="w-full p-4 flex items-center justify-between border-b border-border text-left">
             <span className="text-sm text-ink-soft">Export as CSV</span>
             <Download className="w-4 h-4 text-ink-faint" />

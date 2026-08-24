@@ -360,10 +360,10 @@ export function guessPattern(name) {
   return "default";
 }
 
-const PUSH_PATTERNS = ["horizontal-push", "vertical-push", "tricep-extension", "lateral-raise"];
-const PULL_PATTERNS = ["horizontal-pull", "vertical-pull", "curl"];
-const LEG_PATTERNS = ["squat", "hinge", "lunge", "calf-raise", "hip-thrust"];
-const CORE_PATTERNS = ["plank", "crunch"];
+export const PUSH_PATTERNS = ["horizontal-push", "vertical-push", "tricep-extension", "lateral-raise"];
+export const PULL_PATTERNS = ["horizontal-pull", "vertical-pull", "curl"];
+export const LEG_PATTERNS = ["squat", "hinge", "lunge", "calf-raise", "hip-thrust"];
+export const CORE_PATTERNS = ["plank", "crunch"];
 
 /** Push / Pull / Legs / Core, for the Library's filter chips. */
 export function categoryFor(pattern) {

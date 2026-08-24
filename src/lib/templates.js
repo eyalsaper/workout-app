@@ -18,10 +18,10 @@ export const TEMPLATES = [
     label: "Push / Pull / Legs",
     description: "4 days a week — the classic split",
     days: week({
-      0: ["Bench Press", "Overhead Press", "Cable Fly"], // Monday — Push
-      1: ["Deadlift", "Barbell Row", "Face Pull"], // Tuesday — Pull
-      2: ["Back Squat", "Romanian Deadlift", "Standing Calf Raise"], // Wednesday — Legs
-      4: ["Bench Press", "Overhead Press", "Barbell Curl"], // Friday — Push
+      1: ["Bench Press", "Overhead Press", "Cable Fly"], // Monday — Push
+      2: ["Deadlift", "Barbell Row", "Face Pull"], // Tuesday — Pull
+      3: ["Back Squat", "Romanian Deadlift", "Standing Calf Raise"], // Wednesday — Legs
+      5: ["Bench Press", "Overhead Press", "Barbell Curl"], // Friday — Push
     }),
   },
   {
@@ -29,9 +29,9 @@ export const TEMPLATES = [
     label: "Upper / Lower",
     description: "3 days a week — easier to keep",
     days: week({
-      0: ["Bench Press", "Barbell Row", "Overhead Press"], // Monday — Upper
-      2: ["Back Squat", "Romanian Deadlift", "Leg Press"], // Wednesday — Lower
-      4: ["Bench Press", "Barbell Row", "Lateral Raise"], // Friday — Upper
+      1: ["Bench Press", "Barbell Row", "Overhead Press"], // Monday — Upper
+      3: ["Back Squat", "Romanian Deadlift", "Leg Press"], // Wednesday — Lower
+      5: ["Bench Press", "Barbell Row", "Lateral Raise"], // Friday — Upper
     }),
   },
   {
@@ -39,9 +39,9 @@ export const TEMPLATES = [
     label: "Full body",
     description: "2–3 days — good for coming back",
     days: week({
-      0: ["Back Squat", "Bench Press", "Barbell Row"], // Monday
-      2: ["Deadlift", "Overhead Press", "Pull-Up"], // Wednesday
-      4: ["Back Squat", "Bench Press", "Barbell Row"], // Friday
+      1: ["Back Squat", "Bench Press", "Barbell Row"], // Monday
+      3: ["Deadlift", "Overhead Press", "Pull-Up"], // Wednesday
+      5: ["Back Squat", "Bench Press", "Barbell Row"], // Friday
     }),
   },
 ];

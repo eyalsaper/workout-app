@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import React, { useRef, useState } from "react";
+import { GripVertical, Search, X } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
-import { isRestEntry, cleanName, setCountFor } from "../lib/format";
-import { weekdayLabel } from "../lib/training";
+import { isRestEntry, cleanName, setCountFor, formatReps, formatWeight } from "../lib/format";
+import { weekdayLabel, estimateMinutes } from "../lib/training";
+import LibraryPage from "./LibraryPage";
 
 function StatTile({ label, value, onChange }) {
   return (
@@ -24,7 +25,7 @@ function StatTile({ label, value, onChange }) {
 export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
   const {
     plans,
-    primaryPlanId,
+    activePlanId,
     exerciseBank,
     updateBankField,
     appendExerciseToDay,
@@ -37,8 +38,12 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
 
   const [expanded, setExpanded] = useState(null);
   const [newMovement, setNewMovement] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
+  // { index, targetIndex, offsetY, startY, rects } while a row is being dragged.
+  const [drag, setDrag] = useState(null);
+  const rowRefs = useRef([]);
 
-  const day = plans[primaryPlanId]?.[dayIdx];
+  const day = plans[activePlanId]?.[dayIdx];
   if (!day) return null;
 
   const exercises = day.exercises || [];
@@ -49,19 +54,65 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
     if (isRestEntry(ex)) return sum;
     return sum + setCountFor(exerciseBank[cleanName(ex)]);
   }, 0);
+  const minutes = estimateMinutes(day, exerciseBank);
 
   const addMovement = () => {
     const name = cleanName(newMovement);
     if (!name) return;
-    appendExerciseToDay(primaryPlanId, dayIdx, name);
+    appendExerciseToDay(activePlanId, dayIdx, name);
     setNewMovement("");
+  };
+
+  // Drag to reorder — collapses any expanded row first so every row's
+  // height is predictable while the list is being measured mid-drag.
+  const beginDrag = (index, e) => {
+    setExpanded(null);
+    const rects = rowRefs.current.map((el) => el?.getBoundingClientRect());
+    setDrag({ index, targetIndex: index, offsetY: 0, startY: e.clientY, rects });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onDragMove = (e) => {
+    if (!drag) return;
+    const offsetY = e.clientY - drag.startY;
+    const { rects, index } = drag;
+    const draggedCenter = rects[index].top + rects[index].height / 2 + offsetY;
+
+    let target = index;
+    for (let i = index - 1; i >= 0; i--) {
+      if (draggedCenter < rects[i].top + rects[i].height / 2) target = i;
+      else break;
+    }
+    for (let i = index + 1; i < rects.length; i++) {
+      if (draggedCenter > rects[i].top + rects[i].height / 2) target = i;
+      else break;
+    }
+    setDrag((d) => ({ ...d, offsetY, targetIndex: target }));
+  };
+
+  const endDrag = () => {
+    if (drag && drag.targetIndex !== drag.index) {
+      reorderExercise(activePlanId, dayIdx, drag.index, drag.targetIndex);
+    }
+    setDrag(null);
+  };
+
+  /** How far row `i` should visually shift while another row drags past it. */
+  const rowTransform = (i) => {
+    if (!drag) return "";
+    const { index, targetIndex, offsetY, rects } = drag;
+    if (i === index) return `translateY(${offsetY}px)`;
+    const gap = rects[index].height;
+    if (index < targetIndex && i > index && i <= targetIndex) return `translateY(${-gap}px)`;
+    if (index > targetIndex && i < index && i >= targetIndex) return `translateY(${gap}px)`;
+    return "";
   };
 
   return (
     <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-8">
       <div>
         <button type="button" onClick={onBack} className="text-sm text-ink-muted hover:text-accent">
-          Week
+          Program
         </button>
         <h1 className="mt-2.5 text-4xl">{day.name || weekdayLabel(dayIdx)}</h1>
         <p className="mt-1.5 text-sm text-ink-muted">
@@ -69,7 +120,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
           {!isRest &&
             ` · ${exercises.length} movement${exercises.length === 1 ? "" : "s"} · ${totalSets} set${
               totalSets === 1 ? "" : "s"
-            }`}
+            }${minutes > 0 ? ` · ~${minutes} min` : ""}`}
         </p>
       </div>
 
@@ -79,7 +130,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
           type="button"
           role="switch"
           aria-checked={isRest}
-          onClick={() => setDayRest(primaryPlanId, dayIdx, !isRest)}
+          onClick={() => setDayRest(activePlanId, dayIdx, !isRest)}
           className="switch"
           data-on={isRest}
         >
@@ -91,7 +142,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
         <input
           type="text"
           value={day.note || ""}
-          onChange={(e) => setDayNote(primaryPlanId, dayIdx, e.target.value)}
+          onChange={(e) => setDayNote(activePlanId, dayIdx, e.target.value)}
           placeholder="Note, e.g. walk 40 min"
           className="w-full p-3 border border-border-control rounded-card bg-surface"
         />
@@ -102,29 +153,31 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
               const name = cleanName(ex);
               const bankData = exerciseBank[name];
               const isOpen = expanded === i;
+              const isDragging = drag?.index === i;
               return (
-                <div key={i} className="card p-4">
+                <div
+                  key={i}
+                  ref={(el) => (rowRefs.current[i] = el)}
+                  className="card p-4 relative"
+                  style={{
+                    transform: rowTransform(i),
+                    transition: isDragging ? "none" : "transform 150ms ease",
+                    zIndex: isDragging ? 10 : 1,
+                    boxShadow: isDragging ? "0 10px 24px rgba(43,38,32,.18)" : undefined,
+                  }}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="flex flex-col gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => reorderExercise(primaryPlanId, dayIdx, i, i - 1)}
-                        disabled={i === 0}
-                        aria-label="Move up"
-                        className="text-ink-faint disabled:opacity-30"
-                      >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => reorderExercise(primaryPlanId, dayIdx, i, i + 1)}
-                        disabled={i === exercises.length - 1}
-                        aria-label="Move down"
-                        className="text-ink-faint disabled:opacity-30"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onPointerDown={(e) => beginDrag(i, e)}
+                      onPointerMove={onDragMove}
+                      onPointerUp={endDrag}
+                      onPointerCancel={endDrag}
+                      aria-label={`Reorder ${name}`}
+                      className="touch-none cursor-grab active:cursor-grabbing text-ink-faint p-1 -ml-1"
+                    >
+                      <GripVertical className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => setExpanded(isOpen ? null : i)}
@@ -133,9 +186,15 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
                       <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
                         {name}
                       </div>
-                      {bankData?.muscleGroups?.length > 0 && (
+                      {bankData && !bankData.isHidden && (
                         <div className="text-xs text-ink-muted mt-0.5">
-                          {bankData.muscleGroups.join(" · ")}
+                          {bankData.sets}×{formatReps(bankData.reps, bankData.repsUnit)}{" "}
+                          {formatWeight(bankData.weight, bankData.weightUnit)}
+                          {bankData.restSeconds
+                            ? ` · rest ${Math.floor(bankData.restSeconds / 60)}:${String(
+                                bankData.restSeconds % 60
+                              ).padStart(2, "0")}`
+                            : ""}
                         </div>
                       )}
                     </button>
@@ -148,7 +207,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removeExerciseFrom(primaryPlanId, dayIdx, i)}
+                      onClick={() => removeExerciseFrom(activePlanId, dayIdx, i)}
                       aria-label={`Remove ${name}`}
                       className="text-ink-faint hover:text-negative"
                     >
@@ -197,8 +256,28 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
               <button type="button" onClick={addMovement} className="text-sm font-medium text-accent">
                 Add
               </button>
+              <button
+                type="button"
+                onClick={() => setShowPicker(true)}
+                aria-label="Browse the library"
+                className="text-ink-faint hover:text-accent"
+              >
+                <Search className="w-4 h-4" />
+              </button>
             </div>
           </div>
+
+          {showPicker && (
+            <div className="fixed inset-0 z-40 bg-surface-page overflow-y-auto p-3 sm:p-6">
+              <LibraryPage
+                onPick={(name) => {
+                  appendExerciseToDay(activePlanId, dayIdx, name);
+                  setShowPicker(false);
+                }}
+                onBack={() => setShowPicker(false)}
+              />
+            </div>
+          )}
 
           <div>
             <div className="stencil mb-2.5">Progression</div>
@@ -210,7 +289,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
                   role="switch"
                   aria-checked={progression.auto}
                   onClick={() =>
-                    setDayProgression(primaryPlanId, dayIdx, { auto: !progression.auto })
+                    setDayProgression(activePlanId, dayIdx, { auto: !progression.auto })
                   }
                   className="switch"
                   data-on={progression.auto}
@@ -226,7 +305,7 @@ export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
                     step="0.5"
                     value={progression.incrementKg}
                     onChange={(e) =>
-                      setDayProgression(primaryPlanId, dayIdx, {
+                      setDayProgression(activePlanId, dayIdx, {
                         incrementKg: parseFloat(e.target.value) || 0,
                       })
                     }

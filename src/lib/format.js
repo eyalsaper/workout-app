@@ -45,6 +45,22 @@ export const formatReps = (reps, unit) =>
 export const formatWeight = (weight, unit) =>
   unit === "Body Wt." ? "[BW]" : weight ? `[${weight}${unit}]` : "";
 
+/** "4 × 6 · 80 kg" style prescription for a Today exercise row's right side. */
+export function formatPrescription(bankData) {
+  if (!bankData || bankData.isHidden) return "";
+  const count = setCountFor(bankData);
+  const first = setDataFor(bankData, 0);
+  const reps = first.reps ? `${first.reps}${first.repsUnit === "Reps" ? "" : first.repsUnit}` : "";
+  const weight =
+    first.weightUnit === "Body Wt."
+      ? "BW"
+      : first.weight
+      ? `${first.weight} ${first.weightUnit.toLowerCase()}`
+      : "";
+  const countReps = reps ? `${count} × ${reps}` : `${count} set${count === 1 ? "" : "s"}`;
+  return weight ? `${countReps} · ${weight}` : countReps;
+}
+
 /** Seconds on the clock for a timed set. Returns 0 for rep-based sets. */
 export function getTimerSeconds(bankData, setIdx = 0) {
   if (!bankData) return 0;

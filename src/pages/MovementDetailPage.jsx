@@ -24,7 +24,7 @@ export default function MovementDetailPage({ exerciseName, onBack, onSeeHistory 
     removeBankExercise,
     exerciseAppearsIn,
     appendExerciseToDay,
-    primaryPlanId,
+    activePlanId,
     plans,
   } = useWorkout();
 
@@ -251,12 +251,12 @@ export default function MovementDetailPage({ exerciseName, onBack, onSeeHistory 
           <div className="space-y-2.5">
             {pickingDay ? (
               <div className="card p-3 space-y-1.5">
-                {(plans[primaryPlanId] || []).map((d, dayIdx) => (
+                {(plans[activePlanId] || []).map((d, dayIdx) => (
                   <button
                     key={dayIdx}
                     type="button"
                     onClick={() => {
-                      appendExerciseToDay(primaryPlanId, dayIdx, exerciseName);
+                      appendExerciseToDay(activePlanId, dayIdx, exerciseName);
                       setPickingDay(false);
                     }}
                     className="w-full text-left px-3 py-2 rounded-card hover:bg-surface-wash text-sm text-ink-soft"

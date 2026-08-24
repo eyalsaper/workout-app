@@ -4,6 +4,11 @@ import { useWorkout } from "../state/WorkoutContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { exerciseHistory, liftStats, friendlyDate } from "../lib/training";
 
+function monthLabel(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short" });
+}
+
 export default function LiftHistoryPage({ exerciseName, onBack }) {
   const { sessions, exerciseBank, bodyweightKg, deleteSession } = useWorkout();
   const [confirmSessionId, setConfirmSessionId] = useState(null);
@@ -88,6 +93,11 @@ export default function LiftHistoryPage({ exerciseName, onBack }) {
                 title={`${h.date}: ${Math.round(h.e1rm)}kg`}
               />
             ))}
+          </div>
+          <div className="mt-1.5 flex justify-between text-xs text-ink-faint">
+            <span>{monthLabel(history[0].date)}</span>
+            <span>{monthLabel(history[Math.floor(history.length / 2)].date)}</span>
+            <span>{monthLabel(history[history.length - 1].date)}</span>
           </div>
         </div>
       )}

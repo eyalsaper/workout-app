@@ -1,6 +1,6 @@
 // Training maths and date helpers. Pure functions — no React, no Firebase.
 
-import { isRestEntry } from "./format";
+import { isRestEntry, cleanName, setCountFor } from "./format";
 
 export const MUSCLE_GROUPS = [
   "Chest",
@@ -17,17 +17,19 @@ export const MUSCLE_GROUPS = [
 
 /**
  * Plan rows have never had an editable day-name field — every account's
- * `row.day` is still literally "Day 1".."Day 7" — so labeling them
- * Monday..Sunday by position is a pure presentation change, not a migration.
+ * `row.day` is still literally "Day 1".."Day 7" — so labeling them by
+ * position is a pure presentation change, not a migration. The week is
+ * Sunday-first by position: slot 0 is always labeled Sunday, whatever was
+ * already stored there.
  */
 export const WEEKDAY_NAMES = [
+  "Sunday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
   "Saturday",
-  "Sunday",
 ];
 
 export function weekdayLabel(dayIndex) {
@@ -50,18 +52,18 @@ export function sessionId(day, planId, dayIndex) {
   return `${day}__${planId}-${dayIndex}`;
 }
 
-/** Monday-based week id, e.g. "2026-W34". Used to group volume. */
+/**
+ * Sunday-based week id, e.g. "2026-W34" — an app-internal label, not the
+ * ISO 8601 week number (which is defined Monday-first and would disagree
+ * with the Sunday-anchored week this app now displays).
+ */
 export function weekKey(date = new Date()) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dayNum = (d.getDay() + 6) % 7; // Monday = 0
-  d.setDate(d.getDate() - dayNum + 3); // nearest Thursday
-  const firstThursday = new Date(d.getFullYear(), 0, 4);
-  const week =
-    1 +
-    Math.round(
-      (d - firstThursday) / 86400000 / 7 -
-        ((firstThursday.getDay() + 6) % 7) / 7
-    );
+  d.setDate(d.getDate() - d.getDay()); // back to this week's Sunday
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const yearStartSunday = new Date(yearStart);
+  yearStartSunday.setDate(yearStart.getDate() - yearStart.getDay());
+  const week = Math.round((d - yearStartSunday) / (7 * 86400000)) + 1;
   return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
@@ -83,6 +85,16 @@ export function friendlyDate(day) {
     day: "numeric",
     month: "short",
   });
+}
+
+/** "2026-08" for a date — one photo slot per calendar month. */
+export function monthKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function monthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "short" });
 }
 
 export function daysAgo(day) {
@@ -295,11 +307,23 @@ export function exerciseHistory(sessions, exerciseName, bodyweightKg = 0) {
 }
 
 // ---------------------------------------------------------------- dashboard
-/** The 7 dateKey strings, Monday through Sunday, for the week containing `date`. */
+/** Rough minutes for a plan day — set count times its own rest, plus ~40s of work per set. */
+export function estimateMinutes(day, exerciseBank) {
+  let seconds = 0;
+  (day?.exercises || []).forEach((raw) => {
+    if (isRestEntry(raw)) return;
+    const bankData = exerciseBank[cleanName(raw)];
+    if (bankData?.isHidden) return;
+    const count = setCountFor(bankData);
+    seconds += count * ((parseInt(bankData?.restSeconds, 10) || 90) + 40);
+  });
+  return Math.round(seconds / 60);
+}
+
+/** The 7 dateKey strings, Sunday through Saturday, for the week containing `date`. */
 export function weekDates(date = new Date()) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const mondayOffset = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - mondayOffset);
+  d.setDate(d.getDate() - d.getDay());
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(d);
     day.setDate(d.getDate() + i);
@@ -308,9 +332,9 @@ export function weekDates(date = new Date()) {
 }
 
 /**
- * Per-calendar-day status for the Mon-Sun strip of one plan. A plan's rows
+ * Per-calendar-day status for the Sun-Sat strip of one plan. A plan's rows
  * are an ordered weekly checklist, not fixed weekdays — nothing pins "Day 1"
- * to Monday — so this reports whether *any* row of the plan was finished on
+ * to Sunday — so this reports whether *any* row of the plan was finished on
  * each real date, rather than trying to line up dayIndex with weekday.
  */
 export function weekStrip(plans, sessions, planId) {
@@ -333,7 +357,7 @@ export function weekStrip(plans, sessions, planId) {
 }
 
 /**
- * Consecutive Monday-Sunday weeks, ending at the current or most recent
+ * Consecutive Sunday-Saturday weeks, ending at the current or most recent
  * finished week, with at least one finished session. The in-progress
  * current week never breaks the streak before it's over — it just isn't
  * counted until it has a finished session of its own.
@@ -399,7 +423,7 @@ export function liftStats(sessions, exerciseName, bodyweightKg = 0) {
   };
 }
 
-/** Total tonnage per week for the last `weeks` Mon-Sun weeks, oldest first. */
+/** Total tonnage per week for the last `weeks` Sun-Sat weeks, oldest first. */
 export function weeklyVolumeSeries(sessions, bodyweightKg = 0, weeks = 12) {
   const byWeek = {};
   Object.values(sessions || {}).forEach((session) => {
@@ -426,12 +450,12 @@ export function weeklyVolumeSeries(sessions, bodyweightKg = 0, weeks = 12) {
   return series;
 }
 
-/** Monday=0..Sunday=6 index for a date — plan rows are pinned to weekdays by position. */
+/** Sunday=0..Saturday=6 index for a date — plan rows are pinned to weekdays by position. */
 export function todayDayIndex(date = new Date()) {
-  return (date.getDay() + 6) % 7;
+  return date.getDay();
 }
 
-/** Total logged sets and tonnage across every session in one Mon-Sun week. */
+/** Total logged sets and tonnage across every session in one Sun-Sat week. */
 export function weekSummary(sessions, week, bodyweightKg = 0) {
   let sets = 0;
   let tonnageKg = 0;

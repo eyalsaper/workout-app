@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { ChevronLeft, Plus, Search } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
 import {
   EXERCISE_LIBRARY,
@@ -13,7 +13,12 @@ import { exerciseHistory } from "../lib/training";
 const CATEGORIES = ["All", "Push", "Pull", "Legs", "Core", "Mine"];
 const EQUIPMENT_ORDER = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight", "Other"];
 
-export default function LibraryPage({ onOpenDetail }) {
+/**
+ * Doubles as the exercise picker: pass `onPick` (RoutineEditorPage does,
+ * from an overlay) and rows call it instead of opening the movement's
+ * detail page — same list, different tap behaviour.
+ */
+export default function LibraryPage({ onOpenDetail, onBack, onPick }) {
   const { exerciseBank, sessions, bodyweightKg, seedLibrary, addBankExercise } = useWorkout();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -70,14 +75,24 @@ export default function LibraryPage({ onOpenDetail }) {
     if (name && addBankExercise(name)) {
       setDraftName("");
       setIsAdding(false);
-      onOpenDetail(name);
+      if (onPick) onPick(name);
+      else onOpenDetail(name);
     }
   };
 
   return (
     <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-6">
       <div>
-        <h1 className="text-4xl">The library</h1>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-sm text-ink-muted hover:text-accent flex items-center gap-1 mb-2.5"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back
+          </button>
+        )}
+        <h1 className="text-4xl">{onPick ? "Add a movement" : "The library"}</h1>
         <p className="mt-1.5 text-sm text-ink-muted">
           {Object.keys(exerciseBank).filter((n) => !exerciseBank[n].isHidden).length} movements ·{" "}
           {trainedCount} you've trained.
@@ -133,7 +148,7 @@ export default function LibraryPage({ onOpenDetail }) {
               <button
                 key={m.name}
                 type="button"
-                onClick={() => onOpenDetail(m.name)}
+                onClick={() => (onPick ? onPick(m.name) : onOpenDetail(m.name))}
                 className="w-full card p-4 flex items-center gap-3 text-left"
               >
                 <div className="flex-1">

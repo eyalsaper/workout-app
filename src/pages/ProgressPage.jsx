@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
 import { exerciseHistory, weeklyVolumeSeries, weekKeyFromDay } from "../lib/training";
+import { buildLedger } from "../lib/achievements";
+import AchievementsPage from "./AchievementsPage";
+import BodyPage from "./BodyPage";
 
 const RANGES = [
   { key: "12w", label: "12 weeks", weeks: 12 },
@@ -8,9 +11,20 @@ const RANGES = [
   { key: "all", label: "All time", weeks: 52 },
 ];
 
-export default function ProgressPage({ onOpenLift }) {
-  const { sessions, exerciseBank, bodyweightKg } = useWorkout();
+function shortDate(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+export default function ProgressPage({ onOpenLift, onOpenLadder }) {
+  const { sessions, exerciseBank, bodyweightKg, bodyweightLog, settings } = useWorkout();
   const [range, setRange] = useState("12w");
+  const [tab, setTab] = useState("charts");
+
+  const lately = useMemo(
+    () => buildLedger(sessions, bodyweightLog, bodyweightKg, settings.sex).slice(0, 3),
+    [sessions, bodyweightLog, bodyweightKg, settings.sex]
+  );
 
   const weeksLogged = useMemo(() => {
     const weeks = new Set(
@@ -64,81 +78,132 @@ export default function ProgressPage({ onOpenLift }) {
             : "Log a session to see progress."}
         </h1>
         <div className="mt-3 flex gap-1.5">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => setRange(r.key)}
-              className="chip"
-              data-active={range === r.key}
-            >
-              {r.label}
-            </button>
-          ))}
+          <button type="button" onClick={() => setTab("charts")} className="chip" data-active={tab === "charts"}>
+            Charts
+          </button>
+          <button type="button" onClick={() => setTab("record")} className="chip" data-active={tab === "record"}>
+            Record book
+          </button>
+          <button type="button" onClick={() => setTab("body")} className="chip" data-active={tab === "body"}>
+            Body
+          </button>
         </div>
       </div>
 
-      <div className="card p-4">
-        <div className="flex items-baseline justify-between">
-          <span className="stencil">Weekly volume</span>
-          <span className="text-xs text-ink-muted">kg lifted</span>
-        </div>
-        <div className="mt-3.5 h-24 flex items-end gap-1">
-          {series.map((s, i) => {
-            const third = Math.floor((series.length * 2) / 3);
-            const colorClass =
-              i >= third ? "bg-accent" : i >= series.length / 3 ? "bg-positive-bg" : "bg-border-page";
-            return (
-              <div
-                key={s.week}
-                className={`flex-1 rounded-t ${colorClass}`}
-                style={{ height: `${Math.max(4, (s.tonnage / maxTonnage) * 100)}%` }}
-                title={`${s.week}: ${s.tonnage}kg`}
-              />
-            );
-          })}
-        </div>
-        {insight && (
-          <p className="aside text-sm mt-3.5 pt-3.5 border-t border-border">{insight}</p>
-        )}
-      </div>
+      {tab === "record" ? (
+        <AchievementsPage onOpenLadder={onOpenLadder} />
+      ) : tab === "body" ? (
+        <BodyPage />
+      ) : (
+        <>
+          <div className="flex gap-1.5">
+            {RANGES.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => setRange(r.key)}
+                className="chip"
+                data-active={range === r.key}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
 
-      <div>
-        <div className="stencil mb-2.5">Main lifts · estimated 1RM</div>
-        <div className="space-y-2">
-          {mainLifts.length === 0 && (
-            <p className="text-sm text-ink-muted italic">Nothing logged yet.</p>
-          )}
-          {mainLifts.map(({ name, latest, delta }) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => onOpenLift(name)}
-              className="w-full card p-4 flex items-center gap-3 text-left"
-            >
-              <div className="flex-1">
-                <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
-                  {name}
-                </div>
-                <div className="text-xs text-ink-muted mt-0.5">
-                  {latest.topSet ? `${latest.topSet.weight}${latest.topSet.weightUnit} × ${latest.topSet.reps}` : ""}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="readout text-lg">
-                  {Math.round(latest.e1rm)}
-                  <span className="text-xs font-body text-ink-muted"> kg</span>
-                </div>
-                {delta != null && (
-                  <div className={`text-xs mt-0.5 ${delta === 0 ? "text-ink-faint" : "text-positive-delta"}`}>
-                    {delta === 0 ? "flat" : `${delta > 0 ? "+" : ""}${delta}`}
+          <div className="card p-4">
+            <div className="flex items-baseline justify-between">
+              <span className="stencil">Weekly volume</span>
+              <span className="text-xs text-ink-muted">kg lifted</span>
+            </div>
+            <div className="mt-3.5 h-24 flex items-end gap-1">
+              {series.map((s, i) => {
+                const third = Math.floor((series.length * 2) / 3);
+                const colorClass =
+                  i >= third ? "bg-accent" : i >= series.length / 3 ? "bg-positive-bg" : "bg-border-page";
+                return (
+                  <div
+                    key={s.week}
+                    className={`flex-1 rounded-t ${colorClass}`}
+                    style={{ height: `${Math.max(4, (s.tonnage / maxTonnage) * 100)}%` }}
+                    title={`${s.week}: ${s.tonnage}kg`}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-1.5 flex justify-between text-xs text-ink-faint">
+              <span>W{series[0]?.week.split("-W")[1]}</span>
+              <span>W{series[Math.floor(series.length / 2)]?.week.split("-W")[1]}</span>
+              <span>this week</span>
+            </div>
+            {insight && (
+              <p className="aside text-sm mt-3.5 pt-3.5 border-t border-border">{insight}</p>
+            )}
+          </div>
+
+          <div>
+            <div className="stencil mb-2.5">Main lifts · estimated 1RM</div>
+            <div className="space-y-2">
+              {mainLifts.length === 0 && (
+                <p className="text-sm text-ink-muted italic">Nothing logged yet.</p>
+              )}
+              {mainLifts.map(({ name, latest, delta }) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onOpenLift(name)}
+                  className="w-full card p-4 flex items-center gap-3 text-left"
+                >
+                  <div className="flex-1">
+                    <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
+                      {name}
+                    </div>
+                    <div className="text-xs text-ink-muted mt-0.5">
+                      {latest.topSet
+                        ? `${latest.topSet.weight}${latest.topSet.weightUnit} × ${latest.topSet.reps} · ${shortDate(latest.date)}`
+                        : ""}
+                    </div>
                   </div>
-                )}
+                  <div className="text-right">
+                    <div className="readout text-lg">
+                      {Math.round(latest.e1rm)}
+                      <span className="text-xs font-body text-ink-muted"> kg</span>
+                    </div>
+                    {delta != null && (
+                      <div className={`text-xs mt-0.5 ${delta === 0 ? "text-ink-faint" : "text-positive-delta"}`}>
+                        {delta === 0 ? "flat" : `${delta > 0 ? "+" : ""}${delta}`}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {lately.length > 0 && (
+            <div>
+              <div className="flex items-baseline justify-between">
+                <span className="stencil">Lately</span>
+                <button type="button" onClick={() => setTab("record")} className="text-xs font-medium text-accent">
+                  Record book ›
+                </button>
               </div>
-            </button>
-          ))}
-        </div>
-      </div>
+              <div className="mt-1">
+                {lately.map((entry, i) => (
+                  <div
+                    key={`${entry.date}-${i}`}
+                    className={`flex items-baseline gap-3 py-2.5 ${
+                      i === lately.length - 1 ? "" : "border-b border-dashed border-border-control"
+                    }`}
+                  >
+                    <span className="w-14 flex-shrink-0 text-xs text-ink-faint">{shortDate(entry.date)}</span>
+                    <span className="flex-1 text-sm text-ink-soft leading-[1.35]">{entry.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

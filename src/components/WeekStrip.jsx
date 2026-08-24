@@ -1,10 +1,10 @@
 import React from "react";
 import { Check } from "lucide-react";
 
-const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 /**
- * Mon-Sun completion strip, driven by `weekStrip()` from lib/training.js.
+ * Sun-Sat completion strip, driven by `weekStrip()` from lib/training.js.
  * Tapping a day previews it (via onSelect) — "today" and "selected" are
  * independent states, so you can browse another day while today stays
  * marked with a ring.

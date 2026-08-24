@@ -35,6 +35,11 @@
   --color-negative: #b0543f;
   --color-warning: #b0543f;
 
+  /* Card-inner hairline and dashed-ledger separator. Distinct from
+     border/border-control so Night can dial them independently. */
+  --color-hairline: #f0ebe0;
+  --color-separator: #e0d9cb;
+
   --radius-hero: 1.375rem;
   --radius-card: 1rem;
   --radius-inset: 0.8125rem;
@@ -42,6 +47,49 @@
 
   --font-heading: "Newsreader", Georgia, serif;
   --font-body: "Archivo", system-ui, sans-serif;
+}
+
+/*
+ * Night — the same paper stock seen at night, not an inversion: warm
+ * ink-brown surfaces, the same clay and sage, the accent lifted one step.
+ * Overrides the exact @theme names above so every existing utility
+ * (bg-surface, text-ink-muted, ...) follows automatically.
+ */
+@layer base {
+  [data-theme="night"] {
+    --color-surface-page: #17140f;
+    --color-surface: #201c16;
+    --color-surface-inset: #272219;
+    --color-surface-wash: #2c261e;
+
+    --color-accent: #d1745a;
+    --color-accent-hot: #e08a6e;
+    --color-accent-ink: #17140f;
+
+    --color-positive-bg: #3b4634;
+    --color-positive-ink: #c6d0bc;
+    --color-positive-ink-strong: #e2e8db;
+    --color-positive-delta: #9fb188;
+
+    --color-ink: #f0e9dc;
+    --color-ink-hot: #ffffff;
+    --color-ink-soft: #ddd5c6;
+    --color-ink-mid: #a79c8a;
+    --color-ink-muted: #8a8071;
+    --color-ink-faint: #6e6555;
+
+    --color-border: #2f2921;
+    --color-border-page: #3a332a;
+    --color-border-control: #3f382e;
+
+    --color-negative: #d1745a;
+    --color-warning: #d1745a;
+
+    --color-hairline: #2f2921;
+    --color-separator: #332c24;
+
+    color-scheme: dark;
+  }
 }
 
 @layer base {
@@ -126,6 +174,12 @@
   .card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  /* Sage means finished — a completed plan day, never just a text label. */
+  .card-done {
+    background: var(--color-positive-bg);
     border-radius: var(--radius-card);
   }
 
@@ -252,6 +306,52 @@
     border-radius: var(--radius-card);
   }
 
+  /*
+   * The finish/milestone screens are the app's one deliberate exception:
+   * always the odd screen out. In Paper they're dark-on-light's inverse
+   * (dark); in Night — where everything else already went dark — they flip
+   * to be the only paper-bright screen. Never reference these two ambient
+   * tokens directly in a component; use the --inv-* pairs below instead.
+   */
+  .surface-inverse {
+    background: var(--color-ink);
+    color: var(--color-surface);
+    --inv-title: #fdfaf4;
+    --inv-eyebrow: #c2604a;
+    --inv-aside: #a39a8a;
+    --inv-tile-bg: #353029;
+    --inv-tile-value: #fdfaf4;
+    --inv-tile-label: #a39a8a;
+    --inv-tile-unit: #8c8375;
+    --inv-pr-bg: #3d4a35;
+    --inv-pr-label: #cdd6c4;
+    --inv-pr-title: #e2e8db;
+    --inv-pr-sub: #cdd6c4;
+    --inv-btn-primary-bg: #fdfaf4;
+    --inv-btn-primary-label: #2b2620;
+    --inv-btn-secondary-border: #453d33;
+    --inv-btn-secondary-label: #c4bcae;
+  }
+  [data-theme="night"] .surface-inverse {
+    background: #fdfaf4;
+    color: #2b2620;
+    --inv-title: #2b2620;
+    --inv-eyebrow: #b0543f;
+    --inv-aside: #6b6152;
+    --inv-tile-bg: #f3f0e6;
+    --inv-tile-value: #2b2620;
+    --inv-tile-label: #a39a8a;
+    --inv-tile-unit: #8c8375;
+    --inv-pr-bg: #cdd6c4;
+    --inv-pr-label: #2b3327;
+    --inv-pr-title: #2b3327;
+    --inv-pr-sub: #2b3327;
+    --inv-btn-primary-bg: #2b2620;
+    --inv-btn-primary-label: #fdfaf4;
+    --inv-btn-secondary-border: #e0d9cb;
+    --inv-btn-secondary-label: #6b6152;
+  }
+
   /* On/off switch, styled to match the spec's toggle rows. */
   .switch {
     width: 38px;
@@ -288,7 +388,7 @@
 @keyframes enter {
   from {
     opacity: var(--enter-opacity, 1);
-    transform: scale(var(--enter-scale, 1));
+    transform: scale(var(--enter-scale, 1)) translateY(var(--enter-y, 0px));
   }
 }
 

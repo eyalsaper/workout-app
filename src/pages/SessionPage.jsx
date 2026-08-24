@@ -56,6 +56,20 @@ export default function SessionPage({ sessionKey, onExit, onFinish }) {
     );
   }
 
+  // A finished session is closed, even if it was ended early with sets
+  // still unlogged — nothing should hand this page a finished session's
+  // key, but guard it directly rather than trusting every caller to.
+  if (session.finishedAt) {
+    return (
+      <div className="max-w-lg mx-auto card p-8 text-center space-y-4">
+        <p className="text-ink-soft">This session is already finished.</p>
+        <button type="button" onClick={onExit} className="btn-clay px-4 py-2">
+          Back to Today
+        </button>
+      </div>
+    );
+  }
+
   if (exerciseNames.length === 0) {
     return (
       <div className="max-w-lg mx-auto card p-8 text-center space-y-4">

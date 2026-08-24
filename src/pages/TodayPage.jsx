@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { ChevronRight, Play } from "lucide-react";
+import { Check, Play } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
 import WeekStrip from "../components/WeekStrip";
-import StreakBadge from "../components/StreakBadge";
 import WeeklyTargetsRow from "../components/WeeklyTargetsRow";
 import ExerciseLabel from "../components/ExerciseLabel";
-import { isRestEntry, cleanName, setCountFor, setDataFor } from "../lib/format";
+import { isRestEntry, cleanName, setCountFor, setDataFor, formatPrescription } from "../lib/format";
 import { suggestNextLoad, loadIncrement } from "../lib/training";
 import {
   weekKey,
@@ -42,17 +41,18 @@ function estimateWorkout(day, exerciseBank, bodyweightKg) {
   return { sets, tonnageKg: Math.round(tonnageKg), minutes: Math.round(seconds / 60) };
 }
 
-export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
+export default function TodayPage({ onStartDay, onOpenDetail, onSwitchToWorkouts, segmentControl }) {
   const {
     plans,
     sessions,
     exerciseBank,
     bodyweightKg,
-    primaryPlanId,
+    activePlanId,
     isDayDoneThisWeek,
     getWeekSession,
     isExerciseLogged,
     getLastPerformance,
+    getDayTotalSets,
   } = useWorkout();
 
   const thisWeek = weekKey();
@@ -65,13 +65,14 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
   const viewedIdx = browsingIdx ?? todayIndex;
   const isViewingToday = viewedIdx === todayIndex;
 
-  const day = plans[primaryPlanId]?.[viewedIdx];
+  const days = plans[activePlanId] || [];
+  const day = days[viewedIdx];
   const exercises = (day?.exercises || []).filter((ex) => !isRestEntry(ex));
   const isRestDay = (day?.exercises || []).length > 0 && exercises.length === 0;
 
   const strip = useMemo(
-    () => weekStrip(plans, sessions, primaryPlanId),
-    [plans, sessions, primaryPlanId]
+    () => weekStrip(plans, sessions, activePlanId),
+    [plans, sessions, activePlanId]
   );
   const streak = useMemo(() => computeStreak(sessions), [sessions]);
   const week = useMemo(
@@ -79,8 +80,8 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
     [sessions, thisWeek, bodyweightKg]
   );
 
-  const logged = isDayDoneThisWeek(primaryPlanId, viewedIdx, thisWeek);
-  const weekSession = getWeekSession(primaryPlanId, viewedIdx, thisWeek);
+  const logged = isDayDoneThisWeek(activePlanId, viewedIdx, thisWeek);
+  const weekSession = getWeekSession(activePlanId, viewedIdx, thisWeek);
   const estimate = estimateWorkout(day, exerciseBank, bodyweightKg);
   const dateLine = new Date(dates[viewedIdx]).toLocaleDateString(undefined, {
     weekday: "long",
@@ -91,6 +92,26 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
   const remaining = exercises.filter(
     (ex) => !isExerciseLogged(weekSession, cleanName(ex))
   ).length;
+
+  // Up to two other planned days, shortest first, for "swap in" — never
+  // today's own day, never rest/open slots.
+  const swapCandidates = useMemo(() => {
+    return days
+      .map((d, idx) => ({ d, idx }))
+      .filter(({ d, idx }) => {
+        if (idx === viewedIdx) return false;
+        const exs = (d.exercises || []).filter((ex) => !isRestEntry(ex));
+        return exs.length > 0;
+      })
+      .map(({ d, idx }) => ({
+        idx,
+        name: d.name || weekdayLabel(idx),
+        sets: getDayTotalSets(activePlanId, idx),
+        minutes: estimateWorkout(d, exerciseBank, bodyweightKg).minutes,
+      }))
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, 2);
+  }, [days, viewedIdx, activePlanId, exerciseBank, bodyweightKg, getDayTotalSets]);
 
   // One computed aside, real data only — never fabricated coaching copy.
   const aside = useMemo(() => {
@@ -109,6 +130,22 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
     return null;
   }, [exercises, exerciseBank, getLastPerformance]);
 
+  const titleText = isRestDay
+    ? "Rest day. You earned it."
+    : remaining === 0
+    ? "Every lift logged. Nice work."
+    : isViewingToday
+    ? day?.name
+      ? `${day.name} is up.`
+      : `${NUMBER_WORDS[remaining] || remaining} ${remaining === 1 ? "lift" : "lifts"} to go and the week's yours.`
+    : `${NUMBER_WORDS[remaining] || remaining} ${remaining === 1 ? "lift" : "lifts"} planned.`;
+  const titleSubline =
+    isViewingToday && !isRestDay && remaining > 0 && day?.name
+      ? `${exercises.length} lift${exercises.length === 1 ? "" : "s"}, ${estimate.sets} set${
+          estimate.sets === 1 ? "" : "s"
+        }.`
+      : null;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-300 pb-6">
       <div>
@@ -125,23 +162,17 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
           )}
         </div>
         <h1 className="mt-2 text-4xl leading-[1.05]">
-          {isRestDay
-            ? "Rest day. You earned it."
-            : remaining === 0
-            ? "Every lift logged. Nice work."
-            : isViewingToday
-            ? `${NUMBER_WORDS[remaining] || remaining} ${
-                remaining === 1 ? "lift" : "lifts"
-              } to go and the week's yours.`
-            : `${NUMBER_WORDS[remaining] || remaining} ${
-                remaining === 1 ? "lift" : "lifts"
-              } planned.`}
+          {titleText}
+          {titleSubline && (
+            <>
+              <br />
+              {titleSubline}
+            </>
+          )}
         </h1>
       </div>
 
-      <div className="flex items-center justify-between">
-        <StreakBadge streak={streak} />
-      </div>
+      {segmentControl}
 
       <div className="card p-5">
         <WeekStrip days={strip} selectedIndex={viewedIdx} onSelect={setBrowsingIdx} />
@@ -177,10 +208,10 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
           {isViewingToday && (
             <button
               type="button"
-              onClick={onManagePlan}
+              onClick={onSwitchToWorkouts}
               className="btn-outline w-full py-3.5 text-sm"
             >
-              Train anyway — pick a routine
+              Train anyway — pick a workout
             </button>
           )}
         </>
@@ -200,6 +231,7 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
               {exercises.map((ex, i) => {
                 const name = cleanName(ex);
                 const isDone = isExerciseLogged(weekSession, name);
+                const prescription = formatPrescription(exerciseBank[name]);
                 return (
                   <div key={i} className="flex items-center gap-3">
                     <span
@@ -210,35 +242,66 @@ export default function TodayPage({ onStartDay, onOpenDetail, onManagePlan }) {
                     <div className="flex-1">
                       <ExerciseLabel name={ex} onOpenDetail={onOpenDetail} />
                     </div>
+                    {prescription && (
+                      <span className="text-xs font-medium text-ink-muted whitespace-nowrap">
+                        {prescription}
+                      </span>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {aside && isViewingToday && <p className="aside text-sm leading-relaxed">{aside}</p>}
+            {aside && isViewingToday && (
+              <div className="bg-surface-inset rounded-inset px-4 py-3">
+                <p className="aside text-sm leading-relaxed">{aside}</p>
+              </div>
+            )}
 
-            <button type="button" onClick={() => onStartDay(viewedIdx)} className="btn-ink w-full py-4">
-              <Play className="w-4 h-4" />
-              {logged
-                ? `Continue · ${logged.done}/${logged.total} done`
-                : isViewingToday
-                ? "Begin session"
-                : `Begin ${weekdayLabel(viewedIdx)}'s session`}
-            </button>
+            {logged?.finished ? (
+              // A finished session is done, full stop — even one ended early
+              // via SessionPage's "Finish session" link with sets still
+              // unlogged. Showing "Continue · 0/2 done" here would invite
+              // re-opening a session that's already closed out; see
+              // startSession's resumable check, which won't touch it either.
+              <div className="w-full py-4 rounded-card bg-positive-bg text-positive-ink-strong text-center font-medium flex items-center justify-center gap-2">
+                <Check className="w-4 h-4" /> Session logged
+              </div>
+            ) : (
+              <button type="button" onClick={() => onStartDay(viewedIdx)} className="btn-ink w-full py-4">
+                <Play className="w-4 h-4" />
+                {isViewingToday ? "Begin session" : `Begin ${weekdayLabel(viewedIdx)}'s session`}
+              </button>
+            )}
           </div>
 
           <WeeklyTargetsRow />
         </>
       )}
 
-      <button
-        type="button"
-        onClick={onManagePlan}
-        className="btn-outline w-full py-3 text-sm"
-      >
-        Plan the week
-        <ChevronRight className="w-4 h-4" />
-      </button>
+      {isViewingToday && swapCandidates.length > 0 && (
+        <div>
+          <div className="stencil mb-2.5">Not feeling it? Swap in</div>
+          <div className="space-y-2">
+            {swapCandidates.map((c) => (
+              <button
+                key={c.idx}
+                type="button"
+                onClick={() => onStartDay(c.idx)}
+                className="w-full card px-4 py-3.5 flex items-center justify-between gap-3 text-left"
+              >
+                <span className="text-base" style={{ fontFamily: "var(--font-heading)" }}>
+                  {c.name}
+                </span>
+                <span className="text-xs text-ink-muted whitespace-nowrap">
+                  {c.sets} set{c.sets === 1 ? "" : "s"}
+                  {c.minutes > 0 ? ` · ${c.minutes} min` : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

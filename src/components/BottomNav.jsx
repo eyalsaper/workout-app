@@ -1,10 +1,25 @@
 import React from "react";
-import { Home, ListOrdered, TrendingUp } from "lucide-react";
+import { Dumbbell, CalendarDays, TrendingUp } from "lucide-react";
 
 const TABS = [
-  { key: "today", label: "Today", icon: Home, match: ["today", "weekPlanner", "routineEditor", "session", "sessionSummary"] },
-  { key: "history", label: "Progress", icon: TrendingUp, match: ["history", "liftHistory"] },
-  { key: "library", label: "Library", icon: ListOrdered, match: ["library", "movementDetail"] },
+  {
+    key: "workout",
+    label: "Workout",
+    icon: Dumbbell,
+    match: ["workout", "buildWorkout", "session", "sessionSummary", "movementDetail"],
+  },
+  {
+    key: "program",
+    label: "Program",
+    icon: CalendarDays,
+    match: ["program", "weekPlanner", "routineEditor", "planBuilder"],
+  },
+  {
+    key: "progress",
+    label: "Progress",
+    icon: TrendingUp,
+    match: ["progress", "liftHistory", "liftLadder"],
+  },
 ];
 
 /**
@@ -14,7 +29,7 @@ const TABS = [
 export default function BottomNav({ activePage, onNavigate }) {
   return (
     <nav className="tab-bar fixed bottom-0 left-0 right-0 z-30 flex pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-6xl mx-auto w-full flex">
+      <div className="max-w-lg mx-auto w-full flex">
         {TABS.map(({ key, label, icon: Icon, match }) => {
           const isActive = match.includes(activePage);
           return (
