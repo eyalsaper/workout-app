@@ -1,7 +1,29 @@
-import React, { createContext, useContext, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { useFirebaseSync } from "../hooks/useFirebaseSync";
 import { isRestEntry, cleanName, setCountFor, setDataFor } from "../lib/format";
-import { dateKey, sessionId, weekKey, weekKeyFromDay } from "../lib/training";
+import {
+  dateKey,
+  detectNewBests,
+  roundProgress,
+  sessionId,
+  tonnageOf,
+  weekKey,
+  weekKeyFromDay,
+} from "../lib/training";
+import {
+  PROGRAM_VERSION,
+  advance,
+  currentCursor,
+  emptyProgram,
+  migrateToPlan,
+  nextDay,
+  orderedDays,
+  reconcileCursor,
+  sessionDayId,
+  skipDay,
+  toPlanMode,
+  toScheduleMode,
+} from "../lib/plan";
 import { EXERCISE_LIBRARY, libraryEntry } from "../lib/exerciseLibrary";
 import { useAuth } from "./AuthContext";
 import { userBasePath } from "../firebase";
@@ -10,7 +32,10 @@ import { userBasePath } from "../firebase";
 // from this and never touch Firebase directly, so changing how storage works
 // later (adding accounts, moving to Firestore) only means editing this file.
 
-const WorkoutContext = createContext(null);
+// Exported so the dev preview harness (src/dev/) can mount a single screen
+// against fixture data without a Firebase account. Nothing in the app itself
+// should consume the context directly — use useWorkout().
+export const WorkoutContext = createContext(null);
 
 const DEFAULT_BANK = {
   Squat: {
@@ -87,11 +112,22 @@ const DEFAULT_SETTINGS = {
   restSound: true,
   showRpe: true,
   onboarded: false,
-  // "paper" | "night" | "system" — which theme to render.
-  theme: "system",
   // Used only to pick which strength-standard table the record book shows —
   // never inferred, never defaulted to either value.
   sex: "",
+
+  // ---- v2 ----
+  // Mirrors program.mode and is edited from Settings, which is why it is a
+  // setting at all — the programme itself remains the source of truth.
+  programMode: "plan",
+  // Surfaced in Settings only in schedule mode; the week otherwise just frames
+  // the charts, and those are Sunday-based regardless.
+  weekStartsOn: "sun",
+  // Off means every art slot falls back to its plain surface (§8.4).
+  characterArt: true,
+  artOnlyMine: false,
+  // Shipped images hide, user images delete (§8.6).
+  hiddenArtIds: [],
 };
 
 export function WorkoutProvider({ children }) {
@@ -164,6 +200,35 @@ export function WorkoutProvider({ children }) {
     {}
   );
 
+  // ---- v2: the programme is a plan, not a calendar ----
+  //
+  // These are new nodes, written alongside the legacy `plans` / `planNames`
+  // rather than over them. The migration below reads the old shape and never
+  // writes to it, so nothing existing is lost and the old data stays readable.
+  //
+  // version 0 is the "never migrated" sentinel: an object rather than null
+  // because Firebase deletes a node set to null, which would make the seed
+  // fight itself on every load.
+  /*
+   * Programmes are a MAP, not a single record: an account can hold several
+   * blocks and switch between them. One is active at a time, named by
+   * settings.activeProgramId, and every screen reads that one.
+   *
+   * `__v0` is the "never migrated" sentinel — an object rather than null
+   * because Firebase deletes a node set to null, which would make the seed
+   * fight itself on every load.
+   */
+  const [programs, setPrograms, programReady] = useFirebaseSync(`${base}/programs`, {
+    __v0: { version: 0 },
+  });
+  // v2's first shape held ONE programme here. Accounts that migrated under it
+  // adopt that record into the map below rather than being migrated a second
+  // time, which would build a duplicate set of routines.
+  const [legacyProgram, , legacyProgramReady] = useFirebaseSync(`${base}/program`, {
+    version: 0,
+  });
+  const [routines, setRoutines, routinesReady] = useFirebaseSync(`${base}/routines`, {});
+
   const isReady =
     bankReady &&
     trackerReady &&
@@ -176,7 +241,94 @@ export function WorkoutProvider({ children }) {
     bodyweightLogReady &&
     chapterSummariesReady &&
     measurementsReady &&
-    savedWorkoutsReady;
+    savedWorkoutsReady &&
+    programReady &&
+    legacyProgramReady &&
+    routinesReady;
+
+  /**
+   * §7.5 — everyone lands in plan mode, once, silently.
+   *
+   * Runs after the whole account has loaded so the migration can see the
+   * legacy plan, the bank and the session history together. The ref guards
+   * StrictMode's double-invoke in dev; the version check guards every load
+   * after the first.
+   */
+  const programIds = Object.keys(programs || {}).filter((id) => id !== "__v0");
+  const activeProgramId = programIds.includes(rawSettings?.activeProgramId)
+    ? rawSettings.activeProgramId
+    : programIds[0];
+  const program = (activeProgramId && programs?.[activeProgramId]) || null;
+
+  /** Writes one programme back into the map, leaving the others alone. */
+  const setProgram = (updater) =>
+    setPrograms((prev) => {
+      const id = activeProgramId;
+      if (!id) return prev;
+      const current = prev?.[id];
+      const next = typeof updater === "function" ? updater(current) : updater;
+      return { ...prev, [id]: next };
+    });
+
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (!isReady || migratedRef.current) return;
+    if (program?.version === PROGRAM_VERSION) return;
+    migratedRef.current = true;
+
+    const planIds = Object.keys(plans || {}).map(Number).sort((a, b) => a - b);
+    const activeId = planIds.includes(Number(rawSettings?.activePlanId))
+      ? Number(rawSettings.activePlanId)
+      : planIds[0];
+
+    // No legacy plan at all — a brand-new account. It gets an empty programme
+    // in plan mode with no prompt, and first run (8O) takes it from there.
+    // Adopt the single-programme record from v2's first shape, untouched.
+    if (legacyProgram?.version === PROGRAM_VERSION) {
+      setPrograms((prev) => {
+        const next = { ...prev };
+        delete next.__v0;
+        return { ...next, [legacyProgram.id]: legacyProgram };
+      });
+      setSettings((prev) => ({ ...prev, activeProgramId: legacyProgram.id }));
+      return;
+    }
+
+    const seed = (built) => {
+      setPrograms((prev) => {
+        const next = { ...prev };
+        delete next.__v0;
+        return { ...next, [built.id]: built };
+      });
+      setSettings((prev) => ({ ...prev, activeProgramId: built.id }));
+    };
+
+    if (activeId === undefined) {
+      seed(emptyProgram());
+      return;
+    }
+
+    const migrated = migrateToPlan({
+      planId: activeId,
+      planDays: plans[activeId],
+      planName: planNames?.[activeId],
+      exerciseBank,
+      sessions,
+    });
+    seed(migrated.program);
+    setRoutines((prev) => ({ ...migrated.routines, ...prev }));
+  }, [
+    isReady,
+    programs,
+    legacyProgram,
+    plans,
+    planNames,
+    exerciseBank,
+    sessions,
+    rawSettings,
+    setPrograms,
+    setRoutines,
+  ]);
 
   const value = useMemo(() => {
     // ---- Exercise bank ----
@@ -308,16 +460,15 @@ export function WorkoutProvider({ children }) {
 
     /** Which days (across all plans) include this exercise, for "Appears in". */
     const exerciseAppearsIn = (exName) => {
+      // Reads the plan, not the legacy weekday grid: which days of the
+      // programme have a routine containing this movement.
       const results = [];
-      Object.entries(plans).forEach(([planId, days]) => {
-        (days || []).forEach((day, dayIdx) => {
-          const match = (day.exercises || []).some(
-            (ex) => !isRestEntry(ex) && cleanName(ex) === exName
-          );
-          if (match) {
-            results.push({ planId: Number(planId), dayIdx, dayLabel: day.name });
-          }
-        });
+      orderedDays(program).forEach((day, index) => {
+        const routine = routines?.[day.routineId];
+        const match = (routine?.movements || []).some(
+          (movement) => cleanName(movement.movementId) === exName
+        );
+        if (match) results.push({ dayId: day.id, position: index + 1, dayName: day.name });
       });
       return results;
     };
@@ -510,8 +661,6 @@ export function WorkoutProvider({ children }) {
         return next;
       });
 
-    // Monthly progress photos live entirely on-device (see lib/localPhotos)
-    // — no Firebase involvement, so BodyPage talks to that module directly.
 
     // ---- Sessions: the training log, and now the source of truth ----
 
@@ -579,6 +728,78 @@ export function WorkoutProvider({ children }) {
             startedAt: Date.now(),
             finishedAt: null,
             entries: buildEntries(planId, dayIndex),
+            note: "",
+          },
+        }));
+      }
+      return id;
+    };
+
+    /**
+     * v2 — starts the session for one day of the plan.
+     *
+     * The two new session fields are stamped here, at creation: `planDayId`
+     * (which day of the plan this was) and `roundNumber` (which round it
+     * belonged to). They are what round tonnage and round-close detection
+     * read, and they are written once so nothing has to re-derive them later
+     * and reach a different answer.
+     *
+     * Sets, reps and target load come from the ROUTINE, not the global bank —
+     * that is the difference between the old model and this one.
+     */
+    const startPlanDay = (dayId, { isSwap = false } = {}) => {
+      const cursor = currentCursor(program);
+      const day = orderedDays(program).find((d) => d.id === dayId);
+      const routine = day ? routines?.[day.routineId] : null;
+      const today = dateKey();
+
+      // Resume an unfinished session for this day in this round rather than
+      // starting a second one — the same guard the legacy path has.
+      const resumable = Object.entries(sessions).find(
+        ([, s]) => s?.planDayId === dayId && s?.roundNumber === cursor.round && !s.finishedAt
+      );
+      if (resumable) return resumable[0];
+
+      // A swap gets its own id so it never collides with the real day.
+      const id = `s_${today}__${dayId}__r${cursor.round}${isSwap ? "__swap" : ""}`;
+      if (!sessions[id]) {
+        const entries = {};
+        (routine?.movements || []).forEach((movement, order) => {
+          const name = cleanName(movement.movementId);
+          if (!name) return;
+          const count = Math.max(1, parseInt(movement.sets, 10) || 1);
+          const planned = Array.from({ length: count }, () => ({
+            weight: movement.targetLoadKg ? String(movement.targetLoadKg) : "",
+            weightUnit: "KG",
+            reps: "",
+            repsUnit: "Reps",
+            targetReps: movement.reps ?? "",
+            rpe: "",
+            done: false,
+            at: null,
+          }));
+          // `order` is stored because Firebase returns object keys sorted
+          // alphabetically — without it the session runs in the wrong order.
+          if (entries[name]) entries[name].sets.push(...planned);
+          else entries[name] = { order, sets: planned };
+        });
+
+        setSessions((prev) => ({
+          ...prev,
+          [id]: {
+            date: today,
+            planId: null,
+            dayIndex: null,
+            planDayId: dayId,
+            roundNumber: cursor.round,
+            // A swapped-in session is trained instead of today's day. It is
+            // logged like any other, but it does not move the plan on — §8A.
+            isSwap,
+            routineId: day?.routineId || null,
+            label: day?.name || routine?.name || "Session",
+            startedAt: Date.now(),
+            finishedAt: null,
+            entries,
             note: "",
           },
         }));
@@ -720,6 +941,72 @@ export function WorkoutProvider({ children }) {
         return { ...prev, [id]: { ...session, finishedAt: Date.now(), note } };
       });
 
+    /**
+     * Saves a session and moves the plan on — the one place both happen.
+     *
+     * Tonnage and new bests are computed HERE, once, and stored on the record,
+     * so 8G and the record book read the same numbers rather than each
+     * deriving their own. The cursor advances by exactly one (rule 7.2.2), and
+     * the caller is handed which finish screen the session earned so it never
+     * has to ask the cursor a second question.
+     */
+    const completeSession = (id, note = "") => {
+      const session = sessions[id];
+      if (!session) return null;
+
+      const newBests = detectNewBests(sessions, session, id);
+      const tonnageKg = Math.round(tonnageOf([session], bodyweightKg));
+
+      setSessions((prev) => {
+        const current = prev[id];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [id]: { ...current, finishedAt: Date.now(), note, tonnageKg, newBests },
+        };
+      });
+
+      // Two kinds of session never move the cursor: an ad-hoc one, which is
+      // not a day of the plan at all, and a swapped-in one, which is a day of
+      // the plan trained out of turn.
+      const isPlanDay = !!session.planDayId && !session.isSwap;
+      const result = isPlanDay
+        ? advance(program)
+        : { cursor: currentCursor(program), roundClosed: false, showRoundClosed: false };
+      if (isPlanDay) writeProgram({ cursor: result.cursor });
+
+      /*
+       * Auto-progression, if this day has it switched on: the routine's target
+       * loads go up so the day is heavier next time round.
+       *
+       * Only the movements actually completed move — a day you cut short does
+       * not get harder as a reward for stopping. Bodyweight movements have no
+       * load to raise, so they are left alone.
+       */
+      const day = orderedDays(program).find((d) => d.id === session.planDayId);
+      if (day?.progression?.auto && !session.isSwap) {
+        const step = Number(day.progression.incrementKg) || 2.5;
+        const routine = routines?.[day.routineId];
+        if (routine) {
+          const completed = new Set(
+            Object.entries(session.entries || {})
+              .filter(([, entry]) => (entry.sets || []).every((set) => set?.done))
+              .map(([name]) => name)
+          );
+          saveRoutine({
+            ...routine,
+            movements: (routine.movements || []).map((movement) =>
+              completed.has(movement.movementId) && movement.targetLoadKg > 0
+                ? { ...movement, targetLoadKg: Math.round((movement.targetLoadKg + step) * 100) / 100 }
+                : movement
+            ),
+          });
+        }
+      }
+
+      return { ...result, newBests, tonnageKg, roundNumber: session.roundNumber };
+    };
+
     const updateSessionNote = (id, note) =>
       setSessions((prev) => {
         const session = prev[id];
@@ -786,10 +1073,314 @@ export function WorkoutProvider({ children }) {
       };
     };
 
+    // ---- The plan and its cursor ----
+    //
+    // Every consumer reads `roundInfo`; nothing recomputes day counts of its
+    // own. That is what keeps the Today ring, its caption and the Program
+    // screen's segment bar from ever disagreeing (§4.7).
+
+    const planDays = orderedDays(program);
+    const upNext = nextDay(program);
+    const roundInfo = roundProgress(program, planDays);
+    const getRoutine = (routineId) => routines?.[routineId] || null;
+
+    /** The routine behind the day the cursor is on. */
+    const nextRoutine = upNext ? getRoutine(upNext.day.routineId) : null;
+
+    /** Most recent logged session date, for "waiting N days" (display only). */
+    const lastSessionDate =
+      Object.values(sessions || {})
+        .filter((s) => s?.finishedAt && s?.date)
+        .map((s) => s.date)
+        .sort()
+        .pop() || null;
+
+    /** Has the day the cursor points at already been logged today? Drives 8B. */
+    const loggedToday = Object.values(sessions || {}).some(
+      (s) => s?.date === dateKey() && s?.finishedAt
+    );
+
+    const writeProgram = (patch) =>
+      setProgram((prev) => ({ ...(prev || emptyProgram()), ...patch }));
+
+    /**
+     * Rule 7.2.2 — called once, when a session is saved. Returns which finish
+     * screen the session earned so the caller can route to 8G or 8H without
+     * asking the cursor a second question and risking a different answer.
+     */
+    const advanceCursor = () => {
+      const result = advance(program);
+      writeProgram({ cursor: result.cursor });
+      return result;
+    };
+
+    /** Rule 7.2.5 — the only way to move the cursor without training. */
+    const skipCurrentDay = () => {
+      const result = skipDay(program);
+      writeProgram({
+        cursor: result.cursor,
+        skips: [...(program?.skips || []), result.skip].filter(Boolean),
+      });
+      return result;
+    };
+
+    /** 8H's "START ROUND 9" — the cursor already rolled, this just navigates. */
+    const startNextRound = () => currentCursor(program);
+
+    /** Rule 7.2.6 — applied on every plan edit, never on a load. */
+    const setPlanDays = (nextDays) => {
+      const anchorId = upNext?.day?.id;
+      writeProgram({
+        days: nextDays.map((day, order) => ({ ...day, order })),
+        cursor: reconcileCursor(nextDays, program?.cursor, anchorId),
+      });
+    };
+
+    /** §7.4 — switching never deletes or rewrites sessions. */
+    const setProgramMode = (mode) => {
+      if (mode === program?.mode) return;
+      if (mode === "schedule") {
+        setProgram(toScheduleMode(program));
+      } else {
+        const week = weekKey();
+        const loggedThisWeek = Object.values(sessions || {})
+          .filter((s) => s?.date && weekKeyFromDay(s.date) === week)
+          .map((s) => sessionDayId(s, program))
+          .filter(Boolean);
+        setProgram(toPlanMode(program, loggedThisWeek));
+      }
+      setSettings((prev) => ({ ...prev, programMode: mode }));
+    };
+
+    const saveRoutine = (routine) =>
+      setRoutines((prev) => ({ ...prev, [routine.id]: routine }));
+
+    const newLocalId = (prefix) =>
+      `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+    /**
+     * First run (8O) — a ready-made programme, created in plan mode with no
+     * prompt. Cursor at Day 1, round 1; the user is never asked about modes.
+     */
+    const createProgramFromTemplate = (template) => {
+      const nextRoutines = {};
+      const days = template.days.map((day, order) => {
+        const routineId = newLocalId("r");
+        nextRoutines[routineId] = {
+          id: routineId,
+          name: day.name,
+          focus: day.focus || "",
+          movements: (day.movements || []).map((movement, i) => ({ ...movement, order: i })),
+        };
+        return { id: newLocalId("d"), order, name: day.name, routineId };
+      });
+
+      const built = {
+        ...emptyProgram(),
+        name: `Block ${programIds.length + 1}`,
+        focus: template.name,
+        days,
+      };
+      setRoutines((prev) => ({ ...prev, ...nextRoutines }));
+      // Seeds into the map and makes itself active — first run has no active
+      // programme yet, so setProgram() would have nowhere to write.
+      setPrograms((prev) => {
+        const next = { ...prev };
+        delete next.__v0;
+        return { ...next, [built.id]: built };
+      });
+      setSettings((prev) => ({
+        ...prev,
+        onboarded: true,
+        programMode: "plan",
+        activeProgramId: built.id,
+      }));
+    };
+
+    /**
+     * Clones a ready-made template's days into Yours, without touching the
+     * plan. §8C: a template is a read-only starting point, so running or
+     * editing one copies it first. Returns the new routine ids.
+     */
+    const cloneTemplateRoutines = (template) => {
+      const cloned = {};
+      const ids = [];
+      (template.days || []).forEach((day) => {
+        const routineId = newLocalId("r");
+        ids.push(routineId);
+        cloned[routineId] = {
+          id: routineId,
+          name: day.name,
+          focus: day.focus || "",
+          movements: (day.movements || []).map((movement, i) => ({ ...movement, order: i })),
+        };
+      });
+      setRoutines((prev) => ({ ...prev, ...cloned }));
+      return ids;
+    };
+
+    /** Adds one routine to the plan as its next day. Used by "Build my own". */
+    const addRoutineAsDay = (routine) => {
+      const dayId = newLocalId("d");
+      setRoutines((prev) => ({ ...prev, [routine.id]: routine }));
+      const appendDay = (base) => {
+        const days = orderedDays(base);
+        return {
+          ...base,
+          days: [
+            ...days,
+            { id: dayId, order: days.length, name: routine.name, routineId: routine.id },
+          ],
+        };
+      };
+      if (activeProgramId && program?.version === PROGRAM_VERSION) {
+        setProgram((prev) => appendDay(prev));
+      } else {
+        // "Build my own" on first run: the routine becomes Day 1 of a new one.
+        const built = appendDay(emptyProgram());
+        setPrograms((prev) => {
+          const next = { ...prev };
+          delete next.__v0;
+          return { ...next, [built.id]: built };
+        });
+        setSettings((prev) => ({ ...prev, activeProgramId: built.id }));
+      }
+      setSettings((prev) => ({ ...prev, onboarded: true }));
+    };
+
+    /**
+     * CSV import (§10.5). Merges rather than replaces, and never creates a
+     * programme — imported history lands with a null planDayId and the user
+     * still picks or builds a plan.
+     */
+    const importSessions = (imported) => {
+      if (!imported || !Object.keys(imported).length) return;
+      setSessions((prev) => ({ ...imported, ...prev }));
+      // Seed any movement the import mentioned that the bank does not have,
+      // so history and the library agree about what exists.
+      const names = new Set();
+      Object.values(imported).forEach((session) => {
+        Object.keys(session.entries || {}).forEach((name) => names.add(name));
+      });
+      setExerciseBank((prev) => {
+        const next = { ...prev };
+        names.forEach((name) => {
+          if (!next[name]) {
+            next[name] = {
+              sets: 3,
+              reps: "",
+              repsUnit: "Reps",
+              weight: "",
+              weightUnit: "KG",
+              isAlternative: false,
+              altSets: [],
+              source: "import",
+            };
+          }
+        });
+        delete next._empty;
+        return next;
+      });
+    };
+
+    // ---- several programmes, one active ----
+    //
+    // Blocks are kept, not replaced: finishing a block and starting the next
+    // should not mean losing the shape of the one you just did.
+
+    const createProgram = (name) => {
+      const built = { ...emptyProgram(), name: name?.trim() || `Block ${programIds.length + 1}` };
+      setPrograms((prev) => {
+        const next = { ...prev };
+        delete next.__v0;
+        return { ...next, [built.id]: built };
+      });
+      setSettings((prev) => ({ ...prev, activeProgramId: built.id, onboarded: true }));
+      return built.id;
+    };
+
+    const switchProgram = (id) =>
+      setSettings((prev) => ({ ...prev, activeProgramId: id }));
+
+    const renameProgram = (id, name) =>
+      setPrograms((prev) => ({ ...prev, [id]: { ...prev[id], name } }));
+
+    /** Copies the days and their routines, so editing the copy is safe. */
+    const duplicateProgram = (id) => {
+      const source = programs?.[id];
+      if (!source) return null;
+      const clonedRoutines = {};
+      const days = orderedDays(source).map((day, order) => {
+        const routine = routines?.[day.routineId];
+        const routineId = newLocalId("r");
+        if (routine) clonedRoutines[routineId] = { ...routine, id: routineId };
+        return { ...day, id: newLocalId("d"), order, routineId };
+      });
+      const copy = {
+        ...emptyProgram(),
+        name: `${source.name} copy`,
+        focus: source.focus,
+        days,
+      };
+      setRoutines((prev) => ({ ...prev, ...clonedRoutines }));
+      setPrograms((prev) => ({ ...prev, [copy.id]: copy }));
+      setSettings((prev) => ({ ...prev, activeProgramId: copy.id }));
+      return copy.id;
+    };
+
+    /** Refuses to delete the last one — there must always be a programme. */
+    const removeProgram = (id) => {
+      if (programIds.length <= 1) return;
+      setPrograms((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (id === activeProgramId) {
+        const remaining = programIds.filter((other) => other !== id);
+        setSettings((prev) => ({ ...prev, activeProgramId: remaining[0] }));
+      }
+    };
+
+
+
     return {
       isReady,
       sessions,
       settings,
+
+      // ---- the plan ----
+      program,
+      programs,
+      programIds,
+      activeProgramId,
+      createProgram,
+      switchProgram,
+      renameProgram,
+      duplicateProgram,
+      removeProgram,
+      planDays,
+      upNext,
+      roundInfo,
+      nextRoutine,
+      routines,
+      getRoutine,
+      saveRoutine,
+      cloneTemplateRoutines,
+      createProgramFromTemplate,
+      addRoutineAsDay,
+      importSessions,
+      lastSessionDate,
+      loggedToday,
+      skips: program?.skips || [],
+      advanceCursor,
+      skipCurrentDay,
+      startNextRound,
+      setPlanDays,
+      setProgramMode,
+      setProgram,
+      dayIdForSession: (session) => sessionDayId(session, program),
+
       bodyweightKg,
       bodyweightLog,
       logBodyweight,
@@ -802,6 +1393,7 @@ export function WorkoutProvider({ children }) {
       setSettings,
       getSession,
       startSession,
+      startPlanDay,
       startAdHocSession,
       savedWorkouts,
       saveWorkout,
@@ -810,6 +1402,7 @@ export function WorkoutProvider({ children }) {
       unlogSet,
       addSetTo,
       finishSession,
+      completeSession,
       updateSessionNote,
       deleteSession,
       getLastPerformance,
@@ -870,7 +1463,11 @@ export function WorkoutProvider({ children }) {
     chapterSummaries,
     measurements,
     savedWorkouts,
+    program,
+    routines,
     user,
+    setProgram,
+    setRoutines,
     setSessions,
     setSettings,
     setExerciseBank,

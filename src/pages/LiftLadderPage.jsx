@@ -1,83 +1,211 @@
 import React, { useMemo } from "react";
-import { ChevronLeft } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
-import { RANKS, STRENGTH_STANDARDS_BY_SEX, getStanding, buildLedger } from "../lib/achievements";
+import { Rule } from "../components/poster";
+import {
+  RANKS,
+  buildLedger,
+  getStanding,
+  nextBodyweightMultipleGoal,
+  standardsKeyFor,
+} from "../lib/achievements";
+import { friendlyDate } from "../lib/training";
 
-export default function LiftLadderPage({ liftName, onBack }) {
-  const { sessions, settings, bodyweightKg, bodyweightLog } = useWorkout();
-  const sex = settings.sex;
+/*
+ * Two views behind one screen, both reached from the Record book:
+ *
+ *   liftName given — the LADDER for that lift: the four tiers, where you sit,
+ *   what the next rung costs in kilograms.
+ *   no liftName   — the LEDGER: every first-ever thing the account has done.
+ *
+ * Both are computed from session history each time. Nothing here is awarded
+ * or stored: these are facts about what happened, not badges.
+ */
 
-  const standing = useMemo(
-    () => getStanding(liftName, sessions, bodyweightKg, sex),
-    [liftName, sessions, bodyweightKg, sex]
-  );
-  const table = sex ? STRENGTH_STANDARDS_BY_SEX[sex][liftName] : null;
-  const ledger = useMemo(
-    () => buildLedger(sessions, bodyweightLog, bodyweightKg, sex),
-    [sessions, bodyweightLog, bodyweightKg, sex]
-  );
+const TAG_COLOUR = {
+  PR: "var(--color-teal)",
+  rank: "var(--color-brass)",
+  habit: "var(--color-dim)",
+};
 
-  if (!standing || !table) return null;
-
-  const rows = ["novice", "intermediate", "advanced", "elite"].map((key, i) => {
-    const thresholdKg = Math.round(table[key] * bodyweightKg);
-    const crossing = ledger.find((e) => e.kind === "rank" && e.liftName === liftName && e.rankIndex === i);
-    const state =
-      i < standing.rankIndex ? "past" : i === standing.rankIndex ? "current" : "future";
-    return { rank: RANKS[i], thresholdKg, crossing, state };
-  });
+function Ladder({ liftName, onBack }) {
+  const { sessions, bodyweightKg, settings } = useWorkout();
+  const key = standardsKeyFor(liftName) || liftName;
+  const standing = settings.sex ? getStanding(key, sessions, bodyweightKg, settings.sex) : null;
+  const goal = standing
+    ? nextBodyweightMultipleGoal(key, standing.ratio, bodyweightKg)
+    : null;
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-6">
-      <div>
-        <button type="button" onClick={onBack} className="text-sm text-ink-muted hover:text-accent flex items-center gap-1">
-          <ChevronLeft className="w-4 h-4" /> Record book
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto", padding: "6px 24px 16px" }}
+    >
+      <div className="flex items-center justify-between flex-none" style={{ marginBottom: 10 }}>
+        <button type="button" className="link-teal" onClick={onBack}>
+          Record book
         </button>
-        <h1 className="mt-2.5 text-4xl">{liftName} ladder</h1>
-        <p className="mt-1.5 text-sm text-ink-muted">
-          Thresholds scale with your bodyweight — {Math.round(bodyweightKg)} kg today.
+        <span className="kicker">Ladder</span>
+      </div>
+
+      <span className="poster-title" data-lines={liftName.length > 14 ? "2" : "1"}>
+        {liftName}
+      </span>
+
+      {!standing ? (
+        <p style={{ fontSize: 13, color: "var(--color-dim)", paddingTop: 18 }}>
+          {settings.sex
+            ? "Nothing logged for this lift yet."
+            : "Set your sex in Settings to see where this sits."}
         </p>
-      </div>
+      ) : (
+        <>
+          <span style={{ fontSize: 13, color: "var(--color-muted-poster)", paddingTop: 8 }}>
+            {Math.round(standing.e1rmKg)} kg estimated max ·{" "}
+            {(standing.ratio || 0).toFixed(2)}× bodyweight
+          </span>
 
-      <div className="card overflow-hidden">
-        {rows.map(({ rank, thresholdKg, crossing, state }, i) => (
-          <div
-            key={rank}
-            className={`p-4 flex items-center gap-3.5 ${i > 0 ? "border-t border-border" : ""}`}
-            style={{ background: state === "current" ? "var(--color-positive-bg)" : "transparent" }}
-          >
-            <div className="flex-1">
-              <div
-                className="text-lg"
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  color: state === "future" ? "var(--color-ink-muted)" : "var(--color-ink)",
-                }}
-              >
-                {rank}
-              </div>
-              <div className="mt-1 text-xs" style={{ color: state === "current" ? "var(--color-positive-ink)" : "var(--color-ink-faint)" }}>
-                {state === "past" && crossing ? `crossed ${shortMonth(crossing.date)}` : null}
-                {state === "current" ? "you are here" : null}
-                {state === "future" ? `${thresholdKg - Math.round(standing.e1rmKg)} kg away` : null}
-              </div>
+          <div style={{ paddingTop: 22 }}>
+            <span className="label">The four rungs</span>
+            <div style={{ paddingTop: 8 }}>
+              {RANKS.map((rank, index) => {
+                const reached = index <= standing.rankIndex;
+                const isNext = index === standing.rankIndex + 1;
+                return (
+                  <React.Fragment key={rank}>
+                    <Rule brass={reached} />
+                    <div
+                      className="flex items-baseline justify-between gap-3"
+                      style={{ padding: "13px 0" }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontSize: 17,
+                          fontWeight: reached ? 700 : 600,
+                          textTransform: "uppercase",
+                          color: reached
+                            ? "var(--color-text-strong)"
+                            : "var(--color-muted-poster)",
+                        }}
+                      >
+                        {rank}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: reached
+                            ? "var(--color-teal)"
+                            : isNext
+                            ? "var(--color-brass)"
+                            : "var(--color-dim)",
+                          flex: "none",
+                        }}
+                      >
+                        {reached
+                          ? "reached"
+                          : isNext
+                          ? `${standing.kgToNext} kg away`
+                          : "—"}
+                      </span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
             </div>
-            <span className="readout text-base" style={{ color: state === "future" ? "var(--color-ink-faint)" : "var(--color-ink)" }}>
-              {thresholdKg} kg
-            </span>
           </div>
-        ))}
-      </div>
 
-      <p className="aside text-sm leading-relaxed">
-        Standards use bodyweight ratios, so getting leaner moves you up too — and a heavier bodyweight
-        without a heavier lift can move you back down.
-      </p>
+          {goal && (
+            <div style={{ paddingTop: 20 }}>
+              <span className="label">Next round number</span>
+              <p style={{ fontSize: 14, color: "var(--color-text)", paddingTop: 8 }}>
+                {goal.multiple}× bodyweight — {goal.kgAway} kg away.
+              </p>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function shortMonth(day) {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+function Ledger({ onBack }) {
+  const { sessions, bodyweightLog, bodyweightKg, settings } = useWorkout();
+
+  const ledger = useMemo(
+    () => buildLedger(sessions, bodyweightLog, bodyweightKg, settings.sex),
+    [sessions, bodyweightLog, bodyweightKg, settings.sex]
+  );
+
+  return (
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto", padding: "6px 24px 16px" }}
+    >
+      <div className="flex items-center justify-between flex-none" style={{ marginBottom: 10 }}>
+        <button type="button" className="link-teal" onClick={onBack}>
+          Record book
+        </button>
+        <span className="kicker">Milestones</span>
+      </div>
+
+      <span className="poster-title" data-lines="2">
+        Firsts
+        <br />
+        and bests
+      </span>
+      <span style={{ fontSize: 13, color: "var(--color-muted-poster)", paddingTop: 8 }}>
+        {ledger.length ? `${ledger.length} written in so far` : "nothing written in yet"}
+      </span>
+
+      <div style={{ paddingTop: 22 }}>
+        {ledger.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--color-dim)" }}>
+            Log a few sessions and your firsts land here.
+          </p>
+        ) : (
+          ledger.map((entry, index) => (
+            <React.Fragment key={`${entry.date}-${index}`}>
+              <Rule brass={index === 0} />
+              <div
+                className="flex items-baseline justify-between gap-3"
+                style={{ padding: "13px 0" }}
+              >
+                <div className="flex flex-col gap-[3px] min-w-0">
+                  <span
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: "var(--color-text)",
+                    }}
+                  >
+                    {entry.text}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--color-dim)" }}>
+                    {friendlyDate(entry.date)}
+                  </span>
+                </div>
+                <span
+                  className="uppercase"
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: "0.14em",
+                    fontWeight: 700,
+                    color: TAG_COLOUR[entry.tag] || "var(--color-dim)",
+                    flex: "none",
+                  }}
+                >
+                  {entry.tag}
+                </span>
+              </div>
+            </React.Fragment>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function LiftLadderPage({ liftName, onBack }) {
+  return liftName ? <Ladder liftName={liftName} onBack={onBack} /> : <Ledger onBack={onBack} />;
 }

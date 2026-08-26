@@ -1,152 +1,280 @@
 import React, { useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
-import ConfirmDialog from "../components/ConfirmDialog";
-import { exerciseHistory, liftStats, friendlyDate } from "../lib/training";
+import ArtBand from "../components/ArtBand";
+import { countSets } from "../lib/session";
+import { dateKey, formatTonnage } from "../lib/training";
+import { exportMonthCsv } from "../lib/csv";
 
-function monthLabel(day) {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short" });
+/*
+ * 8E · Workout / History — what actually happened, by month.
+ *
+ * The calendar is a real month grid, not a strip of chips. A day with a
+ * logged session is a brass fill; every other day is dim on transparent.
+ * Nothing else is encoded — not tonnage, not duration, not which routine.
+ * The pattern of brass against ink is the point: at a glance you see the
+ * rhythm of the month, and in plan mode that rhythm is irregular on purpose.
+ */
+
+// Sunday first by default. Schedule mode can move the week start, and the
+// grid follows it — the columns have to line up with the weekdays the plan
+// is actually bound to, or the pattern of brass reads wrong.
+const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
+
+/** Rotates the weekday columns so `startsOn` (0=Sunday) is the first one. */
+function columnsFrom(startsOn) {
+  return Array.from({ length: 7 }, (_, i) => WEEKDAY_INITIALS[(startsOn + i) % 7]);
 }
 
-export default function LiftHistoryPage({ exerciseName, onBack }) {
-  const { sessions, exerciseBank, bodyweightKg, deleteSession } = useWorkout();
-  const [confirmSessionId, setConfirmSessionId] = useState(null);
+function monthLabel(year, month) {
+  return new Date(year, month, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
 
-  const bankData = exerciseBank[exerciseName];
-  const history = useMemo(
-    () => exerciseHistory(sessions, exerciseName, bodyweightKg),
-    [sessions, exerciseName, bodyweightKg]
-  );
-  const stats = liftStats(sessions, exerciseName, bodyweightKg);
-  const maxE1rm = Math.max(1, ...history.map((h) => h.e1rm));
-  const best = history.reduce((top, h) => (!top || h.e1rm > top.e1rm ? h : top), null);
+function shortDate(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
 
-  // Session rows, most recent first, with a PR flag computed against what was
-  // the best e1RM *at the time* — not today's best.
-  const sessionEntries = useMemo(() => {
-    const withIds = Object.entries(sessions)
-      .filter(([, s]) => s?.entries?.[exerciseName]?.sets?.some((x) => x?.done))
-      .sort((a, b) => (a[1].date || "").localeCompare(b[1].date || ""));
+export default function LiftHistoryPage({ segmentControl, onOpenSession, onOpenMovement }) {
+  const { sessions, settings, planDays, dayIdForSession } = useWorkout();
+  const now = new Date();
+  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
 
-    let runningBest = 0;
-    const rows = withIds.map(([id, s]) => {
-      const doneSets = s.entries[exerciseName].sets.filter((x) => x && x.done);
-      const sessionBest = Math.max(
-        ...doneSets.map((x) => {
-          const w = x.weightUnit === "Body Wt." ? bodyweightKg : parseFloat(x.weight) || 0;
-          const r = Number(x.reps) || 0;
-          return r > 0 ? w * (1 + r / 30) : 0;
+  const { year, month } = cursor;
+  const today = dateKey();
+
+  const monthSessions = useMemo(
+    () =>
+      Object.entries(sessions || {})
+        .filter(([, s]) => {
+          if (!s?.date || !s?.finishedAt) return false;
+          const [y, m] = s.date.split("-").map(Number);
+          return y === year && m === month + 1;
         })
-      );
-      const isPr = sessionBest > runningBest * 1.001;
-      runningBest = Math.max(runningBest, sessionBest);
-      return { id, session: s, doneSets, isPr };
-    });
-    return rows.reverse();
-  }, [sessions, exerciseName, bodyweightKg]);
+        .sort((a, b) => (b[1].date || "").localeCompare(a[1].date || "")),
+    [sessions, year, month]
+  );
+
+  const loggedDays = new Set(monthSessions.map(([, s]) => s.date));
+  const recentMovements = [
+    ...new Set(monthSessions.flatMap(([, s]) => Object.keys(s.entries || {}))),
+  ].slice(0, 6);
+  const monthTonnage = monthSessions.reduce((sum, [, s]) => sum + (s.tonnageKg || 0), 0);
+
+  // Sunday unless schedule mode says otherwise.
+  const startsOn = settings.weekStartsOn === "mon" ? 1 : 0;
+  const columns = columnsFrom(startsOn);
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Offset the 1st into its real column, relative to the week start.
+  const firstWeekday = (new Date(year, month, 1).getDay() - startsOn + 7) % 7;
+  // Sized for the worst case — a 31-day month starting on Saturday needs six
+  // rows — so the card never clips when the month changes.
+  const cells = [
+    ...Array.from({ length: firstWeekday }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  const step = (delta) => {
+    const next = new Date(year, month + delta, 1);
+    setCursor({ year: next.getFullYear(), month: next.getMonth() });
+  };
+
+  const exportMonth = () => {
+    const rows = monthSessions.map(([id, s]) => [id, s]);
+    // Resolve planDayId to "Day 3" so an export can be read — and re-imported
+    // — without the programme beside it.
+    const dayNameFor = (planDayId) => {
+      const index = planDays.findIndex((day) => day.id === planDayId);
+      return index === -1 ? "" : `Day ${index + 1}`;
+    };
+    exportMonthCsv(rows, `${year}-${String(month + 1).padStart(2, "0")}`, dayNameFor);
+  };
+
+  /** The whole log, not just the month on screen. */
+  const exportAll = () => {
+    const rows = Object.entries(sessions || {}).filter(([, s]) => s?.finishedAt && s?.date);
+    const dayNameFor = (planDayId) => {
+      const index = planDays.findIndex((day) => day.id === planDayId);
+      return index === -1 ? "" : `Day ${index + 1}`;
+    };
+    exportMonthCsv(rows, "all", dayNameFor);
+  };
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-6">
-      {confirmSessionId && (
-        <ConfirmDialog
-          title="Delete this session?"
-          message="This removes every set logged in it. It cannot be undone."
-          confirmLabel="Delete session"
-          onConfirm={() => {
-            deleteSession(confirmSessionId);
-            setConfirmSessionId(null);
-          }}
-          onCancel={() => setConfirmSessionId(null)}
-        />
-      )}
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-[14px]">
+      <span className="screen-title flex-none">Workout</span>
+      {segmentControl}
 
-      <div>
-        <button type="button" onClick={onBack} className="text-sm text-ink-muted hover:text-accent">
-          Progress
-        </button>
-        <h1 className="mt-2.5 text-4xl">{exerciseName}</h1>
-        <div className="mt-2 flex gap-1.5 flex-wrap">
-          {(bankData?.muscleGroups || []).length > 0 && (
-            <span className="chip">{bankData.muscleGroups.join(" · ")}</span>
-          )}
-          <span className="chip">{history.length} session{history.length === 1 ? "" : "s"}</span>
+      {/* The band IS the month header — the card below must not repeat it. */}
+      <ArtBand
+        screen="history"
+        height={70}
+        kicker={monthLabel(year, month)}
+        sub={
+          monthSessions.length
+            ? `${monthSessions.length} session${
+                monthSessions.length === 1 ? "" : "s"
+              }, ${formatTonnage(monthTonnage)} moved`
+            : "nothing logged"
+        }
+        right={
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => step(-1)}
+              aria-label="Previous month"
+              style={{ padding: 8, color: "var(--color-muted)" }}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => step(1)}
+              aria-label="Next month"
+              style={{ padding: 8, color: "var(--color-muted)" }}
+            >
+              ›
+            </button>
+          </div>
+        }
+      />
+
+      <div className="card flex-none" style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            gap: 5,
+            marginBottom: 6,
+          }}
+        >
+          {columns.map((initial, i) => (
+            <span
+              key={i}
+              className="text-center uppercase"
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                color: "var(--color-dim)",
+              }}
+            >
+              {initial}
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 5 }}>
+          {cells.map((day, index) => {
+            if (day === null) return <span key={`blank-${index}`} style={{ height: 26 }} />;
+            const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const logged = loggedDays.has(key);
+            const isToday = key === today;
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={!logged}
+                onClick={() => {
+                  const match = monthSessions.find(([, s]) => s.date === key);
+                  if (match) onOpenSession(match[0]);
+                }}
+                style={{
+                  height: 26,
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontFamily: "var(--font-display)",
+                  background: logged ? "var(--color-brass)" : "transparent",
+                  color: logged ? "var(--color-on-brass)" : "var(--color-dim)",
+                  fontWeight: logged ? 700 : 400,
+                  // Today unlogged gets a ring, never a fill — a fill would
+                  // claim a session that has not happened.
+                  border: isToday && !logged ? "1px solid var(--color-track-next)" : "none",
+                }}
+              >
+                {day}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {history.length >= 2 && (
-        <div className="card p-4">
-          <div className="flex items-baseline justify-between">
-            <span className="stencil">Estimated 1RM</span>
-            {best && (
-              <span className="text-xs font-medium text-accent">
-                {Math.round(best.e1rm)} kg · best ever
-              </span>
-            )}
-          </div>
-          <div className="mt-3.5 h-24 flex items-end gap-1">
-            {history.map((h, i) => (
-              <div
-                key={i}
-                className={`flex-1 rounded-t ${i >= history.length - 3 ? "bg-accent" : "bg-positive-bg"}`}
-                style={{ height: `${Math.max(4, (h.e1rm / maxE1rm) * 100)}%` }}
-                title={`${h.date}: ${Math.round(h.e1rm)}kg`}
-              />
+      <div className="flex flex-col gap-[8px] min-h-0" style={{ overflowY: "auto" }}>
+        <span className="label" style={{ paddingLeft: 2 }}>
+          Recent
+        </span>
+        {/* Tapping a movement name opens its own history (§6). */}
+        {recentMovements.length > 0 && (
+          <div className="flex flex-wrap gap-[6px]" style={{ paddingBottom: 2 }}>
+            {recentMovements.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => onOpenMovement?.(name)}
+                className="mode-chip"
+                style={{ textTransform: "none", letterSpacing: 0 }}
+              >
+                {name}
+              </button>
             ))}
           </div>
-          <div className="mt-1.5 flex justify-between text-xs text-ink-faint">
-            <span>{monthLabel(history[0].date)}</span>
-            <span>{monthLabel(history[Math.floor(history.length / 2)].date)}</span>
-            <span>{monthLabel(history[history.length - 1].date)}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="flex justify-between">
-        <div>
-          <div className="stencil mb-1.5">Heaviest</div>
-          <div className="readout text-lg">
-            {stats.heaviestWeight > 0 ? `${stats.heaviestWeight} × ${stats.heaviestReps}` : "—"}
-          </div>
-        </div>
-        <div>
-          <div className="stencil mb-1.5">Best volume</div>
-          <div className="readout text-lg">{stats.bestVolume.toLocaleString()} kg</div>
-        </div>
-        <div>
-          <div className="stencil mb-1.5">Avg RPE</div>
-          <div className="readout text-lg">{stats.avgRpe ?? "—"}</div>
-        </div>
+        )}
+        {monthSessions.length === 0 ? (
+          <span className="text-[13px]" style={{ color: "var(--color-dim)" }}>
+            Nothing logged yet. Your first session lands here.
+          </span>
+        ) : (
+          monthSessions.slice(0, 2).map(([id, session]) => {
+            const { done } = countSets(session.entries);
+            const minutes = session.finishedAt
+              ? Math.max(1, Math.round((session.finishedAt - session.startedAt) / 60000))
+              : null;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onOpenSession(id)}
+                className="row-card flex justify-between items-center w-full text-left press"
+              >
+                <div className="flex flex-col gap-[3px] min-w-0">
+                  <span className="row-title truncate">{session.label || "Session"}</span>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {shortDate(session.date)}
+                    {minutes ? ` · ${minutes} min` : ""} · {done} sets
+                  </span>
+                </div>
+                <span className="row-value tabular" style={{ flex: "none", paddingLeft: 12 }}>
+                  {formatTonnage(session.tonnageKg || 0)}
+                </span>
+              </button>
+            );
+          })
+        )}
       </div>
 
-      <div>
-        <div className="stencil mb-2.5">Every session</div>
-        <div className="space-y-2">
-          {sessionEntries.map(({ id, session, doneSets, isPr }) => (
-            <div key={id} className="card p-3.5 flex items-baseline gap-3">
-              <span className="w-16 text-xs text-ink-muted flex-shrink-0">
-                {friendlyDate(session.date)}
-              </span>
-              <span className="flex-1 text-sm text-ink-soft">
-                {doneSets
-                  .map((s) => `${s.weight || "BW"} × ${s.reps}`)
-                  .join("  ·  ")}
-              </span>
-              {isPr && <span className="text-xs font-medium text-accent">PR</span>}
-              <button
-                type="button"
-                onClick={() => setConfirmSessionId(id)}
-                aria-label="Delete this session"
-                className="text-ink-faint hover:text-negative"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-          {sessionEntries.length === 0 && (
-            <p className="text-sm text-ink-muted italic">No sessions logged yet.</p>
-          )}
-        </div>
+      {/* Export lives here, where the data is — not in Settings. */}
+      <div className="flex items-center justify-between gap-3" style={{ marginTop: "auto" }}>
+        <button
+          type="button"
+          className="link-teal text-left"
+          onClick={exportMonth}
+          disabled={monthSessions.length === 0}
+        >
+          Export this month
+        </button>
+        <button
+          type="button"
+          style={{ fontSize: 12, color: "var(--color-dim)", flex: "none" }}
+          onClick={exportAll}
+        >
+          Export everything
+        </button>
       </div>
     </div>
   );

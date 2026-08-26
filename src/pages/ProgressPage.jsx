@@ -1,208 +1,173 @@
-import React, { useMemo, useState } from "react";
+import React from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import { exerciseHistory, weeklyVolumeSeries, weekKeyFromDay } from "../lib/training";
-import { buildLedger } from "../lib/achievements";
-import AchievementsPage from "./AchievementsPage";
-import BodyPage from "./BodyPage";
+import { BarAxis, Bars, PosterSegments, Rule } from "../components/poster";
+import { eightWeekSeries, exerciseHistory, formatTonnage } from "../lib/training";
+import { getChapterInfo } from "../lib/achievements";
 
-const RANGES = [
-  { key: "12w", label: "12 weeks", weeks: 12 },
-  { key: "6m", label: "6 months", weeks: 26 },
-  { key: "all", label: "All time", weeks: 52 },
+/*
+ * 8J · Progress / Charts.
+ *
+ * Deliberately carries NO art — a portrait at this size read as a smear, and
+ * the number is the subject.
+ *
+ * The header delta and the last two bars come from one call to
+ * eightWeekSeries(). A caption disagreeing with the bar above it was the
+ * single most common bug in the last version.
+ */
+
+const SEGMENTS = [
+  ["charts", "Charts"],
+  ["records", "Record book"],
+  ["body", "Body"],
 ];
 
-function shortDate(day) {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+/** Lifts whose top set has climbed most over the window. */
+function movingUp(sessions, bodyweightKg, weeks = 8) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - weeks * 7);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(cutoff.getDate()).padStart(2, "0")}`;
+
+  const names = new Set();
+  Object.values(sessions || {}).forEach((s) => {
+    Object.keys(s?.entries || {}).forEach((name) => names.add(name));
+  });
+
+  return [...names]
+    .map((name) => {
+      const points = exerciseHistory(sessions, name, bodyweightKg);
+      const inWindow = points.filter((p) => p.date >= cutoffKey);
+      if (inWindow.length < 2) return null;
+      const first = parseFloat(inWindow[0].topSet?.weight) || 0;
+      const last = parseFloat(inWindow[inWindow.length - 1].topSet?.weight) || 0;
+      const gain = Math.round((last - first) * 10) / 10;
+      if (gain <= 0) return null;
+      return { name, current: last, gain };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.gain - a.gain)
+    .slice(0, 3);
 }
 
-export default function ProgressPage({ onOpenLift, onOpenLadder }) {
-  const { sessions, exerciseBank, bodyweightKg, bodyweightLog, settings } = useWorkout();
-  const [range, setRange] = useState("12w");
-  const [tab, setTab] = useState("charts");
+export default function ProgressPage({ segment = "charts", onSegmentChange, onCloseChapter }) {
+  const { sessions, bodyweightKg, program, roundInfo } = useWorkout();
 
-  const lately = useMemo(
-    () => buildLedger(sessions, bodyweightLog, bodyweightKg, settings.sex).slice(0, 3),
-    [sessions, bodyweightLog, bodyweightKg, settings.sex]
-  );
+  const { series, thisWeekKg, deltaPct } = eightWeekSeries(sessions, bodyweightKg);
+  const chapter = getChapterInfo(sessions);
+  const climbing = movingUp(sessions, bodyweightKg);
 
-  const weeksLogged = useMemo(() => {
-    const weeks = new Set(
-      Object.values(sessions)
-        .filter((s) => s.finishedAt && s.date)
-        .map((s) => weekKeyFromDay(s.date))
-    );
-    return weeks.size;
-  }, [sessions]);
-
-  const rangeWeeks = RANGES.find((r) => r.key === range).weeks;
-  const series = useMemo(
-    () => weeklyVolumeSeries(sessions, bodyweightKg, rangeWeeks),
-    [sessions, bodyweightKg, rangeWeeks]
-  );
-  const maxTonnage = Math.max(1, ...series.map((s) => s.tonnage));
-
-  const insight = useMemo(() => {
-    const withData = series.filter((s) => s.tonnage > 0);
-    if (withData.length < 2) return null;
-    const last = withData[withData.length - 1];
-    const prev = withData[withData.length - 2];
-    if (prev.tonnage === 0) return null;
-    const pct = Math.round(((last.tonnage - prev.tonnage) / prev.tonnage) * 100);
-    if (pct === 0) return "This week matches last week's volume.";
-    return `This week's volume is ${Math.abs(pct)}% ${pct > 0 ? "higher" : "lower"} than last week.`;
-  }, [series]);
-
-  const mainLifts = useMemo(() => {
-    const withHistory = Object.keys(exerciseBank)
-      .filter((name) => !exerciseBank[name].isHidden)
-      .map((name) => ({ name, history: exerciseHistory(sessions, name, bodyweightKg) }))
-      .filter((x) => x.history.length > 0)
-      .sort((a, b) => b.history.length - a.history.length)
-      .slice(0, 4);
-
-    return withHistory.map(({ name, history }) => {
-      const latest = history[history.length - 1];
-      const prior = history[history.length - 2];
-      const delta = prior ? Math.round((latest.e1rm - prior.e1rm) * 10) / 10 : null;
-      return { name, latest, delta };
-    });
-  }, [exerciseBank, sessions, bodyweightKg]);
+  // Fewer than two weeks with data and the chart says so rather than drawing
+  // a flat line that looks like a bug.
+  const weeksWithData = series.filter((point) => point.value > 0).length;
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-6">
-      <div>
-        <h1 className="text-4xl leading-[1.1]">
-          {weeksLogged > 0
-            ? `${weeksLogged} week${weeksLogged === 1 ? "" : "s"} of steady work.`
-            : "Log a session to see progress."}
-        </h1>
-        <div className="mt-3 flex gap-1.5">
-          <button type="button" onClick={() => setTab("charts")} className="chip" data-active={tab === "charts"}>
-            Charts
-          </button>
-          <button type="button" onClick={() => setTab("record")} className="chip" data-active={tab === "record"}>
-            Record book
-          </button>
-          <button type="button" onClick={() => setTab("body")} className="chip" data-active={tab === "body"}>
-            Body
-          </button>
-        </div>
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto", padding: "6px 24px 16px" }}
+    >
+      <div className="flex flex-col gap-[6px]">
+        <span className="kicker">
+          {program?.name || "Block 1"} · round {roundInfo.round}
+        </span>
+        <span className="big-number tabular">{formatTonnage(thisWeekKg)}</span>
+        <span style={{ fontSize: 13, color: "var(--color-muted-poster)" }}>
+          lifted this week
+          {deltaPct !== null && (
+            <>
+              {" · "}
+              {/* Teal only for a positive delta; a drop is just a number. */}
+              <span style={{ color: deltaPct > 0 ? "var(--color-teal)" : "var(--color-muted-poster)" }}>
+                {deltaPct > 0 ? "+" : ""}
+                {deltaPct}% on last
+              </span>
+            </>
+          )}
+        </span>
       </div>
 
-      {tab === "record" ? (
-        <AchievementsPage onOpenLadder={onOpenLadder} />
-      ) : tab === "body" ? (
-        <BodyPage />
-      ) : (
-        <>
-          <div className="flex gap-1.5">
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                onClick={() => setRange(r.key)}
-                className="chip"
-                data-active={range === r.key}
-              >
-                {r.label}
-              </button>
+      <Rule style={{ margin: "16px 0" }} />
+
+      <PosterSegments options={SEGMENTS} value={segment} onChange={onSegmentChange} />
+
+      <div style={{ paddingTop: 20 }}>
+        <span className="label">Last eight weeks</span>
+        {weeksWithData < 2 ? (
+          <p style={{ fontSize: 13, color: "var(--color-dim)", paddingTop: 14 }}>
+            Two weeks of sessions and this fills in.
+          </p>
+        ) : (
+          <div style={{ paddingTop: 14 }}>
+            <Bars
+              series={series}
+              height={120}
+              label={`Weekly tonnage, ${formatTonnage(thisWeekKg)} this week`}
+            />
+            <BarAxis />
+          </div>
+        )}
+      </div>
+
+      {/*
+        §10.4 — the app never closes a chapter itself. Past eight weeks it
+        offers, once, and the user decides. This is an offer, not a nag: it is
+        a teal link at the bottom, never a banner.
+      */}
+      {chapter && chapter.weekInChapter >= 8 && (
+        <button
+          type="button"
+          className="link-teal text-left"
+          style={{ paddingTop: 22 }}
+          onClick={onCloseChapter}
+        >
+          Close chapter {chapter.number} — {chapter.weekInChapter} weeks in
+        </button>
+      )}
+
+      {climbing.length > 0 && (
+        <div style={{ paddingTop: 24 }}>
+          <span className="label">Moving up</span>
+          <div style={{ paddingTop: 8 }}>
+            {climbing.map((lift) => (
+              <React.Fragment key={lift.name}>
+                <Rule />
+                <div
+                  className="flex items-center justify-between gap-3"
+                  style={{ padding: "13px 0" }}
+                >
+                  <span
+                    className="truncate"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 16,
+                      fontWeight: 600,
+                      color: "var(--color-muted-poster)",
+                    }}
+                  >
+                    {lift.name}
+                  </span>
+                  <div className="flex items-baseline gap-3" style={{ flex: "none" }}>
+                    <span
+                      className="tabular"
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontSize: 17,
+                        fontWeight: 700,
+                        color: "var(--color-brass-text)",
+                      }}
+                    >
+                      {lift.current}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--color-teal)" }}>
+                      +{lift.gain} kg in 8 weeks
+                    </span>
+                  </div>
+                </div>
+              </React.Fragment>
             ))}
           </div>
-
-          <div className="card p-4">
-            <div className="flex items-baseline justify-between">
-              <span className="stencil">Weekly volume</span>
-              <span className="text-xs text-ink-muted">kg lifted</span>
-            </div>
-            <div className="mt-3.5 h-24 flex items-end gap-1">
-              {series.map((s, i) => {
-                const third = Math.floor((series.length * 2) / 3);
-                const colorClass =
-                  i >= third ? "bg-accent" : i >= series.length / 3 ? "bg-positive-bg" : "bg-border-page";
-                return (
-                  <div
-                    key={s.week}
-                    className={`flex-1 rounded-t ${colorClass}`}
-                    style={{ height: `${Math.max(4, (s.tonnage / maxTonnage) * 100)}%` }}
-                    title={`${s.week}: ${s.tonnage}kg`}
-                  />
-                );
-              })}
-            </div>
-            <div className="mt-1.5 flex justify-between text-xs text-ink-faint">
-              <span>W{series[0]?.week.split("-W")[1]}</span>
-              <span>W{series[Math.floor(series.length / 2)]?.week.split("-W")[1]}</span>
-              <span>this week</span>
-            </div>
-            {insight && (
-              <p className="aside text-sm mt-3.5 pt-3.5 border-t border-border">{insight}</p>
-            )}
-          </div>
-
-          <div>
-            <div className="stencil mb-2.5">Main lifts · estimated 1RM</div>
-            <div className="space-y-2">
-              {mainLifts.length === 0 && (
-                <p className="text-sm text-ink-muted italic">Nothing logged yet.</p>
-              )}
-              {mainLifts.map(({ name, latest, delta }) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => onOpenLift(name)}
-                  className="w-full card p-4 flex items-center gap-3 text-left"
-                >
-                  <div className="flex-1">
-                    <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
-                      {name}
-                    </div>
-                    <div className="text-xs text-ink-muted mt-0.5">
-                      {latest.topSet
-                        ? `${latest.topSet.weight}${latest.topSet.weightUnit} × ${latest.topSet.reps} · ${shortDate(latest.date)}`
-                        : ""}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="readout text-lg">
-                      {Math.round(latest.e1rm)}
-                      <span className="text-xs font-body text-ink-muted"> kg</span>
-                    </div>
-                    {delta != null && (
-                      <div className={`text-xs mt-0.5 ${delta === 0 ? "text-ink-faint" : "text-positive-delta"}`}>
-                        {delta === 0 ? "flat" : `${delta > 0 ? "+" : ""}${delta}`}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {lately.length > 0 && (
-            <div>
-              <div className="flex items-baseline justify-between">
-                <span className="stencil">Lately</span>
-                <button type="button" onClick={() => setTab("record")} className="text-xs font-medium text-accent">
-                  Record book ›
-                </button>
-              </div>
-              <div className="mt-1">
-                {lately.map((entry, i) => (
-                  <div
-                    key={`${entry.date}-${i}`}
-                    className={`flex items-baseline gap-3 py-2.5 ${
-                      i === lately.length - 1 ? "" : "border-b border-dashed border-border-control"
-                    }`}
-                  >
-                    <span className="w-14 flex-shrink-0 text-xs text-ink-faint">{shortDate(entry.date)}</span>
-                    <span className="flex-1 text-sm text-ink-soft leading-[1.35]">{entry.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );

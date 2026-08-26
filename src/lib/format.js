@@ -77,3 +77,26 @@ export function formatClock(totalSeconds) {
   const secs = totalSeconds % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+
+/**
+ * A "container" movement: an entry that holds its own list of sub-movements
+ * rather than a load and a rep count. "Core Workout" is one — it is five
+ * movements you work through, not a lift you put weight on.
+ *
+ * The list lives in exerciseDetails[name].routine. A NON-EMPTY list is what
+ * makes a container, not the `type` field: real accounts have entries holding
+ * seven stretches while still marked `type: "explanation"`, and an entry
+ * marked `type: "routine"` with nothing in it is just a normal movement.
+ *
+ * Treating a container as a plain lift is what makes a session say
+ * "Core Workout · 3 × 5 · 40 kg", which is nonsense.
+ */
+export function isContainer(detail) {
+  if (!detail) return false;
+  return (detail.routine || []).some((item) => item && item.trim());
+}
+
+/** The sub-movements of a container, blanks dropped. */
+export function containerSteps(detail) {
+  return (detail?.routine || []).map((item) => (item || "").trim()).filter(Boolean);
+}

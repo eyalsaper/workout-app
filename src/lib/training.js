@@ -1,6 +1,6 @@
 // Training maths and date helpers. Pure functions — no React, no Firebase.
 
-import { isRestEntry, cleanName, setCountFor } from "./format";
+import { isRestEntry, cleanName, setCountFor } from "./format.js";
 
 export const MUSCLE_GROUPS = [
   "Chest",
@@ -471,4 +471,162 @@ export function weekSummary(sessions, week, bodyweightKg = 0) {
     );
   });
   return { sets, tonnageKg: Math.round(tonnageKg) };
+}
+
+// ---------------------------------------------------------------- the round
+/*
+ * Everything derived from the plan cursor, in ONE call.
+ *
+ * The Today ring, the caption beside it, the day strip, the day-name labels
+ * and the Program screen's segment bar all read this object. That is the
+ * point: the single most common bug in the last version was a caption
+ * disagreeing with the bar above it, and it happened because two screens each
+ * did their own arithmetic. If a number appears next to a ring, both come
+ * from here.
+ */
+export function roundProgress(program, days) {
+  const list = days || [];
+  const total = list.length;
+  const round = Math.max(1, program?.cursor?.round ?? 1);
+  const dayIndex = total ? Math.min(Math.max(0, program?.cursor?.dayIndex ?? 0), total - 1) : 0;
+
+  // Days before the cursor are the ones done this round. The cursor IS the
+  // progress — nothing here counts sessions, because time never moves it.
+  const done = dayIndex;
+  const progress = total ? done / total : 0;
+
+  return {
+    total,
+    done,
+    dayIndex,
+    round,
+    position: total ? dayIndex + 1 : 0,
+    progress,
+    dayLabel: total ? `Day ${dayIndex + 1} of ${total}` : "No days in this plan",
+    roundLabel: `round ${round}`,
+    countLabel: `${done} of ${total}`,
+    pills: list.map((day, index) => ({
+      id: day.id,
+      name: day.name,
+      state: index < dayIndex ? "done" : index === dayIndex ? "next" : "upcoming",
+    })),
+    // Six pills is the most that fits at 390px; past that it becomes one bar
+    // plus the numeral (§5.5).
+    collapsed: total > 6,
+    a11y: total ? `Day ${dayIndex + 1} of ${total}, round ${round}` : "No days in this plan",
+  };
+}
+
+/**
+ * The hero's "5 movements · 17 sets · about 52 min" line. Rounded to 5 minutes
+ * because a one-minute estimate for a gym session is false precision.
+ */
+export function routineSummary(routine, defaultRestSeconds = 90) {
+  const movements = routine?.movements || [];
+  const sets = movements.reduce((sum, m) => sum + Math.max(1, Number(m.sets) || 0), 0);
+  // Work time is ~40s a set; rest is the user's own default.
+  const minutes = Math.round((sets * (defaultRestSeconds + 40)) / 60 / 5) * 5;
+  return {
+    movements: movements.length,
+    sets,
+    minutes,
+    label: `${movements.length} movement${movements.length === 1 ? "" : "s"} · ${sets} set${
+      sets === 1 ? "" : "s"
+    } · about ${minutes} min`,
+  };
+}
+
+/**
+ * Tonnage over an arbitrary set of sessions — Σ (weight × reps) over completed
+ * sets only. Round and week rollups both call this so they can never disagree.
+ */
+export function tonnageOf(sessionList, bodyweightKg = 0) {
+  return (sessionList || []).reduce((total, session) => {
+    const doneSets = Object.values(session?.entries || {}).flatMap((e) =>
+      (e.sets || []).filter((s) => s && s.done)
+    );
+    return (
+      total +
+      doneSets.reduce(
+        (sum, s) => sum + toKg(s.weight, s.weightUnit, bodyweightKg) * (Number(s.reps) || 0),
+        0
+      )
+    );
+  }, 0);
+}
+
+/** Tonnes to one decimal above 1t, kilograms below it (§10.3). */
+export function formatTonnage(kg) {
+  const value = Number(kg) || 0;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}t`;
+  return `${Math.round(value)} kg`;
+}
+
+// ------------------------------------------------------------- new bests
+/**
+ * A new best is a weight for a GIVEN REP COUNT that beats everything before it
+ * for that movement.
+ *
+ * Detected once, at save time, and stored on the session — so the finish
+ * screen and the record book can never reach different answers about the same
+ * lift, which is exactly what §10.2 is guarding against.
+ */
+export function detectNewBests(sessions, session, sessionId) {
+  // Best weight per movement per rep count, across every OTHER session.
+  const history = {};
+  Object.entries(sessions || {}).forEach(([id, other]) => {
+    if (id === sessionId || !other?.date) return;
+    Object.entries(other.entries || {}).forEach(([name, entry]) => {
+      (entry.sets || []).forEach((set) => {
+        if (!set?.done) return;
+        const reps = Number(set.reps) || 0;
+        const kg = parseFloat(set.weight) || 0;
+        if (!reps || !kg) return;
+        const key = `${name}|${reps}`;
+        history[key] = Math.max(history[key] || 0, kg);
+      });
+    });
+  });
+
+  const bests = {};
+  Object.entries(session?.entries || {}).forEach(([name, entry]) => {
+    (entry.sets || []).forEach((set) => {
+      if (!set?.done) return;
+      const reps = Number(set.reps) || 0;
+      const kg = parseFloat(set.weight) || 0;
+      if (!reps || !kg) return;
+      const key = `${name}|${reps}`;
+      // A first-ever attempt at a rep count is not a "new best" — there was
+      // nothing to beat, and calling it one would cheapen the row.
+      if (history[key] === undefined) return;
+      if (kg <= history[key]) return;
+      if (!bests[key] || kg > bests[key].weightKg) {
+        bests[key] = { movementId: name, reps, weightKg: kg };
+      }
+    });
+  });
+
+  return Object.values(bests);
+}
+
+/** Sessions belonging to one round of the plan. */
+export function sessionsInRound(sessions, roundNumber) {
+  return Object.values(sessions || {}).filter(
+    (s) => s?.finishedAt && Number(s.roundNumber) === Number(roundNumber)
+  );
+}
+
+/** The 8-week rolling window the charts and their captions both read. */
+export function eightWeekSeries(sessions, bodyweightKg = 0, weeks = 8) {
+  const series = weeklyVolumeSeries(sessions, bodyweightKg, weeks);
+  const last = series[series.length - 1]?.tonnage || 0;
+  const prev = series[series.length - 2]?.tonnage || 0;
+  // The header delta MUST come from these same two numbers (§8J).
+  const deltaPct = prev > 0 ? Math.round(((last - prev) / prev) * 100) : null;
+  return {
+    series: series.map((point) => ({ key: point.week, value: point.tonnage })),
+    thisWeekKg: last,
+    lastWeekKg: prev,
+    deltaPct,
+  };
 }
