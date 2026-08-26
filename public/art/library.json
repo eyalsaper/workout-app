@@ -1,0 +1,46 @@
+{
+  "$schema": "iron-log-art-library/1",
+  "note": "The shipped art library. Slots ask for a MOOD, never for a file. The picker returns a random image tagged with that mood. See design_handoff_v2/04-artwork-and-icon.md.",
+  "moods": {
+    "charge": "before or during work — walking in, teeth gritted, mid-effort. Today hero, session hero, program hero.",
+    "triumph": "after — finished, PR, round closed, chapter closed. Finish screens, record book, chapter.",
+    "calm": "doing nothing on purpose — rest, quiet corners, list screens. Rest card, bands.",
+    "welcome": "first open, empty states, re-onboarding."
+  },
+  "defaultPosition": "center 18%",
+  "images": [
+    { "id": "kaiju-roar",       "file": "art/kaiju-roar.png",       "moods": ["charge"],              "position": "center 22%", "shape": "portrait" },
+    { "id": "brute-flames",     "file": "art/brute-flames.png",     "moods": ["charge", "triumph"],   "position": "center 24%", "shape": "portrait" },
+    { "id": "brute-scream",     "file": "art/brute-scream.png",     "moods": ["charge"],              "position": "center 26%", "shape": "portrait" },
+    { "id": "titan-crystal",    "file": "art/titan-crystal.png",    "moods": ["triumph"],             "position": "center 30%", "shape": "portrait" },
+    { "id": "armor-reach",      "file": "art/armor-reach.png",      "moods": ["charge", "welcome"],   "position": "center 20%", "shape": "portrait" },
+    { "id": "armor-street",     "file": "art/armor-street.png",     "moods": ["charge", "calm"],      "position": "center 18%", "shape": "portrait" },
+    { "id": "web-arms-crossed", "file": "art/web-arms-crossed.png", "moods": ["calm"],                "position": "center 26%", "shape": "portrait" },
+    { "id": "brute-comic",      "file": "art/brute-comic.png",      "moods": ["charge"],              "position": "center 22%", "shape": "portrait" },
+    { "id": "web-portrait",     "file": "art/web-portrait.png",     "moods": ["charge"],              "position": "center 16%", "shape": "portrait" },
+    { "id": "brute-blaze",      "file": "art/brute-blaze.png",      "moods": ["charge", "triumph"],   "position": "center 26%", "shape": "portrait" },
+    { "id": "shield-charge",    "file": "art/shield-charge.png",    "moods": ["charge"],              "position": "center 28%", "shape": "portrait" },
+    { "id": "brute-rubble",     "file": "art/brute-rubble.png",     "moods": ["calm", "triumph"],     "position": "center 30%", "shape": "landscape" },
+    { "id": "flight-red",       "file": "art/flight-red.png",       "moods": ["charge", "calm"],      "position": "center 34%", "shape": "portrait" },
+    { "id": "flight-pop",       "file": "art/flight-pop.png",       "moods": ["triumph", "welcome"],  "position": "center 16%", "shape": "portrait" },
+    { "id": "flight-debris",    "file": "art/flight-debris.png",    "moods": ["triumph"],             "position": "center 22%", "shape": "portrait" },
+    { "id": "flight-sunrise",   "file": "art/flight-sunrise.png",   "moods": ["triumph", "calm"],     "position": "center 14%", "shape": "portrait" },
+    { "id": "reveal-shirt",     "file": "art/reveal-shirt.png",     "moods": ["welcome", "calm"],     "position": "center 18%", "shape": "portrait" },
+    { "id": "flight-moon",      "file": "art/flight-moon.png",      "moods": ["calm"],                "position": "center 20%", "shape": "portrait" },
+    { "id": "flight-sky",       "file": "art/flight-sky.png",       "moods": ["triumph", "welcome"],  "position": "center 14%", "shape": "portrait" },
+    { "id": "flight-doves",     "file": "art/flight-doves.png",     "moods": ["triumph"],             "position": "center 16%", "shape": "portrait" },
+
+    { "id": "char-resolve",     "file": "art/char-resolve.png",     "moods": ["charge"],              "position": "center 14%", "shape": "portrait" },
+    { "id": "char-rage",        "file": "art/char-rage.png",        "moods": ["charge"],              "position": "center 30%", "shape": "landscape" },
+    { "id": "char-shadow",      "file": "art/char-shadow.png",      "moods": ["charge"],              "position": "center 20%", "shape": "portrait" },
+    { "id": "char-rengar",      "file": "art/char-rengar.png",      "moods": ["charge"],              "position": "center 8%",  "shape": "portrait" },
+    { "id": "char-fury",        "file": "art/char-fury.png",        "moods": ["charge", "triumph"],   "position": "center top", "shape": "portrait" },
+    { "id": "char-gear4",       "file": "art/char-gear4.png",       "moods": ["triumph"],             "position": "center 16%", "shape": "portrait" },
+    { "id": "char-ascend",      "file": "art/char-ascend.png",      "moods": ["triumph"],             "position": "center 20%", "shape": "portrait" },
+    { "id": "char-luffy",       "file": "art/char-luffy.png",       "moods": ["triumph"],             "position": "center 18%", "shape": "portrait" },
+    { "id": "char-boss",        "file": "art/char-boss.png",        "moods": ["triumph"],             "position": "center 22%", "shape": "landscape" },
+    { "id": "char-gear5",       "file": "art/char-gear5.png",       "moods": ["welcome", "triumph"],  "position": "center 12%", "shape": "portrait" },
+    { "id": "char-brolaf",      "file": "art/char-brolaf.png",      "moods": ["calm"],                "position": "center 42%", "shape": "landscape" },
+    { "id": "char-tiger",       "file": "art/char-tiger.png",       "moods": ["calm"],                "position": "center 22%", "shape": "portrait" }
+  ]
+}
