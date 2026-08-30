@@ -14,7 +14,8 @@ import { useWorkout } from "../state/WorkoutContext";
  */
 
 export default function PlanBuilderPage({ onBack, onEditDay }) {
-  const { planDays, setPlanDays, setPlanLength, dayMovements, program } = useWorkout();
+  const { planDays, setPlanDays, setPlanLength, dayItemCount, describeDay, program } =
+    useWorkout();
 
   const move = (index, delta) => {
     const target = index + delta;
@@ -69,7 +70,7 @@ export default function PlanBuilderPage({ onBack, onEditDay }) {
         </span>
 
         {planDays.map((day, index) => {
-          const movements = dayMovements(day);
+          const movementCount = dayItemCount(day);
           return (
             <div key={day.id} className="card flex items-center gap-2" style={{ padding: 12 }}>
               <span
@@ -92,10 +93,8 @@ export default function PlanBuilderPage({ onBack, onEditDay }) {
                 style={{ flex: 1 }}
               >
                 <span className="row-title truncate">{day.name || `Workout ${index + 1}`}</span>
-                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
-                  {movements.length
-                    ? `${movements.length} movement${movements.length === 1 ? "" : "s"}`
-                    : "empty — tap to build it"}
+                <span className="text-[12px] truncate" style={{ color: "var(--color-muted)" }}>
+                  {movementCount ? describeDay(day) : "empty — tap to build it"}
                 </span>
               </button>
 

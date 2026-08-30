@@ -22,6 +22,10 @@ import {
   toPlanMode,
   toScheduleMode,
   waitingLabel,
+  countMovements,
+  describeItems,
+  expandMovements,
+  isRoutineItem,
 } from "./plan.js";
 import { roundProgress } from "./training.js";
 
@@ -356,4 +360,70 @@ test("7.5 — a historical session resolves its plan day without being rewritten
   assert.equal(sessionDayId({ planDayId: "d_new", dayIndex: 3, planId: 1 }, program), "d_new");
   // An ad-hoc session belongs to no day.
   assert.equal(sessionDayId({ planId: null, dayIndex: null }, program), null);
+});
+
+// ------------------------------------ a routine nested inside a workout
+
+test("a workout can hold a routine as one item, and expands it in order", () => {
+  const routines = {
+    core: {
+      id: "core",
+      name: "Core Workout",
+      movements: [{ movementId: "Plank" }, { movementId: "Crunch" }],
+    },
+    stretch: {
+      id: "stretch",
+      name: "Strech Routine",
+      movements: [{ movementId: "Cobra" }],
+    },
+  };
+  const items = [
+    { routineId: "core", name: "Core Workout", order: 0 },
+    { routineId: "stretch", name: "Strech Routine", order: 1 },
+  ];
+
+  assert.equal(isRoutineItem(items[0]), true);
+  assert.equal(isRoutineItem({ movementId: "Squat" }), false);
+
+  const flat = expandMovements(items, routines);
+  assert.deepEqual(
+    flat.map((m) => m.movementId),
+    ["Plank", "Crunch", "Cobra"]
+  );
+  // Every movement knows which routine it arrived from.
+  assert.deepEqual(
+    flat.map((m) => m.viaName),
+    ["Core Workout", "Core Workout", "Strech Routine"]
+  );
+  assert.deepEqual(
+    flat.map((m) => m.order),
+    [0, 1, 2]
+  );
+  assert.equal(countMovements(items, routines), 3);
+  assert.equal(describeItems(items, routines), "Core Workout · Strech Routine");
+});
+
+test("lifts and nested routines mix, and order is preserved", () => {
+  const routines = { core: { id: "core", name: "Core", movements: [{ movementId: "Plank" }] } };
+  const items = [
+    { movementId: "Squat", order: 0 },
+    { routineId: "core", name: "Core", order: 1 },
+    { movementId: "Curl", order: 2 },
+  ];
+  assert.deepEqual(
+    expandMovements(items, routines).map((m) => m.movementId),
+    ["Squat", "Plank", "Curl"]
+  );
+  assert.equal(describeItems(items, routines), "Squat · Core · Curl");
+});
+
+test("a deleted routine contributes nothing rather than breaking the session", () => {
+  const items = [{ movementId: "Squat" }, { routineId: "gone", name: "Gone" }];
+  assert.deepEqual(
+    expandMovements(items, {}).map((m) => m.movementId),
+    ["Squat"]
+  );
+  assert.equal(countMovements(items, {}), 1);
+  // The snapshotted name still reads, so the row does not go blank.
+  assert.equal(describeItems(items, {}), "Squat · Gone");
 });

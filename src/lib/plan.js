@@ -447,3 +447,63 @@ export function detachDaysFromRoutines(days, routines) {
     };
   });
 }
+
+// ------------------------------------------------ a routine inside a workout
+
+/*
+ * A workout can hold a whole ROUTINE as one of its items.
+ *
+ * "Core Workout + Strech Routine" is one training day made of two saved
+ * routines. In the list it reads as a single line, not as fifteen movements;
+ * opening it shows what is inside. That is what the very first version of
+ * this app did with a movement that secretly held a list, except here the
+ * thing it holds is a real routine you can also run on its own.
+ *
+ * An item is either:
+ *   { movementId, sets, reps, targetLoadKg }   — a lift
+ *   { routineId, name }                        — a routine, run in full
+ */
+export function isRoutineItem(item) {
+  return !!item?.routineId;
+}
+
+/** A routine item, snapshotted with a name so it still reads if the routine goes. */
+export function routineItem(routine, order = 0) {
+  return { routineId: routine.id, name: routine.name, order };
+}
+
+/**
+ * Expands a workout's items into the flat movement list a session runs.
+ *
+ * A nested routine contributes its movements in order. Each carries `viaName`
+ * so the session can say which routine a movement came from, and a missing
+ * routine contributes nothing rather than breaking the session.
+ */
+export function expandMovements(items, routines) {
+  const out = [];
+  (items || []).forEach((item) => {
+    if (!isRoutineItem(item)) {
+      out.push({ ...item, order: out.length });
+      return;
+    }
+    const routine = routines?.[item.routineId];
+    (routine?.movements || []).forEach((movement) => {
+      out.push({ ...movement, order: out.length, viaName: routine.name });
+    });
+  });
+  return out;
+}
+
+/** How many movements a workout really holds, nested routines included. */
+export function countMovements(items, routines) {
+  return expandMovements(items, routines).length;
+}
+
+/** One line describing a workout's items: "Core Workout · Strech Routine". */
+export function describeItems(items, routines) {
+  return (items || [])
+    .map((item) =>
+      isRoutineItem(item) ? routines?.[item.routineId]?.name || item.name : item.movementId
+    )
+    .join(" · ");
+}

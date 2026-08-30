@@ -21,11 +21,14 @@ export default function PlanDayEditorPage({ dayId, onBack }) {
     seedPlanDay,
     saveDayAsRoutine,
     bankMovement,
+    routineItem,
+    isRoutineItem,
   } = useWorkout();
 
   const day = planDays.find((d) => d.id === dayId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [nesting, setNesting] = useState(false);
   const [savingAs, setSavingAs] = useState(false);
   const [saveName, setSaveName] = useState("");
 
@@ -94,44 +97,82 @@ export default function PlanDayEditorPage({ dayId, onBack }) {
           </span>
         )}
 
-        {movements.map((movement, index) => (
-          <div
-            key={`${movement.movementId}-${index}`}
-            className="card flex flex-col gap-[8px]"
-            style={{ padding: 14 }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="row-title truncate">{movement.movementId}</span>
-              <button
-                type="button"
-                style={{ fontSize: 13, color: "var(--color-dim)", flex: "none" }}
-                onClick={() => write(movements.filter((_, i) => i !== index))}
+        {movements.map((item, index) => {
+          /*
+           * A nested routine is ONE line, not its movements spread out. It has
+           * no sets or load of its own — it is run in full, in place — so it
+           * shows what it contains instead of three steppers.
+           */
+          if (isRoutineItem(item)) {
+            const inner = routines?.[item.routineId];
+            const names = (inner?.movements || []).map((m) => m.movementId);
+            return (
+              <div
+                key={`${item.routineId}-${index}`}
+                className="card flex flex-col gap-[6px]"
+                style={{ padding: 14, borderColor: "var(--color-border-hi)" }}
               >
-                Remove
-              </button>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-[2px] min-w-0">
+                    <span className="label">Routine</span>
+                    <span className="row-title truncate">{inner?.name || item.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    style={{ fontSize: 13, color: "var(--color-dim)", flex: "none" }}
+                    onClick={() => write(movements.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  {names.length
+                    ? `${names.length} movements · ${names.join(", ")}`
+                    : "this routine is empty"}
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={`${item.movementId}-${index}`}
+              className="card flex flex-col gap-[8px]"
+              style={{ padding: 14 }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="row-title truncate">{item.movementId}</span>
+                <button
+                  type="button"
+                  style={{ fontSize: 13, color: "var(--color-dim)", flex: "none" }}
+                  onClick={() => write(movements.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="flex gap-[8px]">
+                <StepperTile
+                  label="Sets"
+                  value={item.sets}
+                  min={1}
+                  onChange={(v) => patch(index, "sets", v)}
+                />
+                <StepperTile
+                  label="Reps"
+                  value={Number(item.reps) || 0}
+                  min={1}
+                  onChange={(v) => patch(index, "reps", String(v))}
+                />
+                <StepperTile
+                  label="Load"
+                  value={item.targetLoadKg}
+                  step={loadStep}
+                  onChange={(v) => patch(index, "targetLoadKg", v)}
+                />
+              </div>
             </div>
-            <div className="flex gap-[8px]">
-              <StepperTile
-                label="Sets"
-                value={movement.sets}
-                min={1}
-                onChange={(v) => patch(index, "sets", v)}
-              />
-              <StepperTile
-                label="Reps"
-                value={Number(movement.reps) || 0}
-                min={1}
-                onChange={(v) => patch(index, "reps", String(v))}
-              />
-              <StepperTile
-                label="Load"
-                value={movement.targetLoadKg}
-                step={loadStep}
-                onChange={(v) => patch(index, "targetLoadKg", v)}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         <button
           type="button"
@@ -149,8 +190,26 @@ export default function PlanDayEditorPage({ dayId, onBack }) {
           Add from library
         </button>
 
+        {/* Adding a routine keeps it whole; seeding copies its movements in
+            loose and forgets where they came from. Different things. */}
+        <button
+          type="button"
+          onClick={() => setNesting(true)}
+          style={{
+            height: 52,
+            flex: "none",
+            borderRadius: "var(--radius-row)",
+            border: "1px dashed #3a3f48",
+            color: "var(--color-brass)",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Add a whole routine
+        </button>
+
         <button type="button" className="link-teal text-left" onClick={() => setSeeding(true)}>
-          Start from a saved routine
+          Replace everything with a saved routine
         </button>
       </div>
 
@@ -162,6 +221,57 @@ export default function PlanDayEditorPage({ dayId, onBack }) {
           }}
           onClose={() => setPickerOpen(false)}
         />
+      )}
+
+      {nesting && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}>
+          <button
+            type="button"
+            style={{ flex: 1 }}
+            onClick={() => setNesting(false)}
+            aria-label="Close"
+          />
+          <div
+            className="w-full max-w-lg mx-auto flex flex-col gap-2"
+            style={{
+              background: "var(--color-card)",
+              borderTop: "1px solid var(--color-border)",
+              padding: 22,
+              maxHeight: "70dvh",
+              overflowY: "auto",
+            }}
+          >
+            <span className="label">Add a routine to this workout</span>
+            <span className="text-[12px]" style={{ color: "var(--color-dim)", paddingBottom: 4 }}>
+              It stays one line here and runs in full. Edit the routine itself
+              and this workout follows.
+            </span>
+            {Object.values(routines || {}).length === 0 && (
+              <span style={{ fontSize: 13, color: "var(--color-dim)" }}>
+                Nothing on the shelf yet.
+              </span>
+            )}
+            {Object.values(routines || {}).map((routine) => (
+              <button
+                key={routine.id}
+                type="button"
+                onClick={() => {
+                  write([...movements, routineItem(routine, movements.length)]);
+                  setNesting(false);
+                }}
+                className="row-card flex justify-between items-center w-full text-left"
+              >
+                <span className="row-title truncate">{routine.name}</span>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)", flex: "none" }}>
+                  {(routine.movements || []).length} movements
+                </span>
+              </button>
+            ))}
+            <button type="button" className="btn-secondary" onClick={() => setNesting(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {seeding && (

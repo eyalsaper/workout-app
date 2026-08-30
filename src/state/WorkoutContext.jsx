@@ -19,8 +19,13 @@ import {
   migrateToPlan,
   nextDay,
   orderedDays,
+  countMovements,
   dayAsWorkout,
   dayMovements,
+  describeItems,
+  expandMovements,
+  isRoutineItem,
+  routineItem,
   detachDaysFromRoutines,
   reconcileCursor,
   seedDayFromRoutine,
@@ -919,7 +924,9 @@ export function WorkoutProvider({ children }) {
       const id = `s_${today}__${dayId}__r${cursor.round}${isSwap ? "__swap" : ""}`;
       if (!sessions[id]) {
         const entries = {};
-        (routine?.movements || []).forEach((movement, order) => {
+        // A nested routine contributes its own movements here — the session
+        // logs lifts, and a routine is not one.
+        expandMovements(routine?.movements, routines).forEach((movement, order) => {
           const name = cleanName(movement.movementId);
           if (!name) return;
           const count = Math.max(1, parseInt(movement.sets, 10) || 1);
@@ -936,7 +943,9 @@ export function WorkoutProvider({ children }) {
           // `order` is stored because Firebase returns object keys sorted
           // alphabetically — without it the session runs in the wrong order.
           if (entries[name]) entries[name].sets.push(...planned);
-          else entries[name] = { order, sets: planned };
+          // `via` remembers the nested routine this movement came from, so
+          // the session can say "Strech Routine · 3 of 7" while you are in it.
+          else entries[name] = { order, via: movement.viaName || null, sets: planned };
         });
 
         setSessions((prev) => ({
@@ -1241,7 +1250,14 @@ export function WorkoutProvider({ children }) {
 
     /** The routine behind the day the cursor is on. */
     // The day's own workout, not a shared routine.
-    const nextRoutine = upNext ? dayAsWorkout(upNext.day, routines) : null;
+    const nextRoutine = upNext
+      ? {
+          ...dayAsWorkout(upNext.day, routines),
+          // Expanded, so "5 movements · 17 sets" counts what a nested routine
+          // actually contributes rather than reading it as one line.
+          movements: expandMovements(dayMovements(upNext.day, routines), routines),
+        }
+      : null;
 
     /** Most recent logged session date, for "waiting N days" (display only). */
     const lastSessionDate =
@@ -1728,6 +1744,12 @@ export function WorkoutProvider({ children }) {
       seedPlanDay,
       saveDayAsRoutine,
       dayMovements: (day) => dayMovements(day, routines),
+      // The flat list a session runs, nested routines unpacked.
+      dayExercises: (day) => expandMovements(dayMovements(day, routines), routines),
+      dayItemCount: (day) => countMovements(dayMovements(day, routines), routines),
+      describeDay: (day) => describeItems(dayMovements(day, routines), routines),
+      routineItem,
+      isRoutineItem,
       bankMovement,
       setProgramMode,
       setProgram,

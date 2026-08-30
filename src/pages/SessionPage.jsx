@@ -319,8 +319,11 @@ export default function SessionPage({ sessionKey, onExit, onFinish, onOpenMoveme
 
         <div className="relative flex flex-col gap-[6px]">
           <Kicker>
-            Movement {movementIndex + 1} of {movementNames.length} · Set {activeSetIdx + 1} of{" "}
-            {activeSets.length}
+            {/* A movement inside a nested routine says so — you are part-way
+                through a workout inside the workout. */}
+            {activeEntry?.via ? `${activeEntry.via} · ` : ""}
+            Movement {movementIndex + 1} of {movementNames.length} · Set{" "}
+            {activeSetIdx + 1} of {activeSets.length}
           </Kicker>
           {/* The title is the way into this movement's notes and cues — the
               one place you actually want them is mid-session. */}

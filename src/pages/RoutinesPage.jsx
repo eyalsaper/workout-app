@@ -102,15 +102,13 @@ export default function RoutinesPage({
 
   const matches = (names, minutes) => {
     if (duration && durationBucket(minutes) !== duration) return false;
-    if (muscles.length) {
-      const hit = names.some((n) =>
-        (exerciseBank?.[n]?.muscleGroups || []).some((g) =>
-          muscles.some((m) => g.toLowerCase().includes(m.toLowerCase()) || m === g)
-        )
-      );
-      if (!hit && !workoutMuscles(names).some((m) => muscles.includes(m))) return false;
+    if (muscles.length && !workoutMuscles(names, exerciseBank).some((m) => muscles.includes(m))) {
+      return false;
     }
-    if (equipment.length && !workoutEquipment(names).some((e) => equipment.includes(e))) {
+    if (
+      equipment.length &&
+      !workoutEquipment(names, exerciseBank).some((e) => equipment.includes(e))
+    ) {
       return false;
     }
     return true;

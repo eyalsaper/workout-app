@@ -133,6 +133,7 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
     lastSessionDate,
     setProgramMode,
     dayMovements,
+    dayItemCount,
   } = useWorkout();
 
   const [pendingMode, setPendingMode] = useState(null);
@@ -143,9 +144,10 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
   const mode = program?.mode === "schedule" ? "schedule" : "plan";
   const cursorIndex = program?.cursor?.dayIndex ?? 0;
 
-  // A day owns its movements now; it no longer borrows a routine's.
+  // A day owns its movements now; it no longer borrows a routine's. The count
+  // is the real one — a nested routine contributes everything inside it.
   const movementCount = (day) => {
-    const n = dayMovements(day).length;
+    const n = dayItemCount(day);
     return `${n} movement${n === 1 ? "" : "s"}`;
   };
 

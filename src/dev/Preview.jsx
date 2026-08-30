@@ -149,6 +149,14 @@ function useFixtureWorkout(screen) {
       saveBuiltRoutine: () => {},
       dayMovements: (day) => day.movements || ROUTINES[day.routineId]?.movements || [],
       bankMovement: (name, order) => ({ movementId: name, order, sets: 3, reps: "5", targetLoadKg: 0 }),
+      dayItemCount: (day) => (day.movements || ROUTINES[day.routineId]?.movements || []).length,
+      describeDay: (day) =>
+        (day.movements || ROUTINES[day.routineId]?.movements || [])
+          .map((m) => m.movementId || m.name)
+          .join(" · "),
+      dayExercises: (day) => day.movements || ROUTINES[day.routineId]?.movements || [],
+      routineItem: (r, order) => ({ routineId: r.id, name: r.name, order }),
+      isRoutineItem: (item) => !!item?.routineId,
       setPlanLength: () => {},
       updatePlanDay: () => {},
       seedPlanDay: () => {},
