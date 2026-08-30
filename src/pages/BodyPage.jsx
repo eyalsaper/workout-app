@@ -187,7 +187,7 @@ function monthName(day) {
   return new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: "long" });
 }
 
-export default function BodyPage({ segment = "body", onSegmentChange }) {
+export default function BodyPage({ segments }) {
   const {
     bodyweightLog,
     measurements,
@@ -252,7 +252,7 @@ export default function BodyPage({ segment = "body", onSegmentChange }) {
       </div>
 
       <Rule style={{ margin: "16px 0" }} />
-      <PosterSegments options={SEGMENTS} value={segment} onChange={onSegmentChange} />
+      {segments}
 
       <div style={{ paddingTop: 20 }}>
         <span className="label">Weight · 8 weeks</span>

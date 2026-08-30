@@ -149,13 +149,6 @@ export default function MovementDetailPage({ movementName, onBack }) {
     setAddingTo(false);
   };
 
-  const setStep = (index, value) => {
-    const next = [...(detail.routine || [])];
-    next[index] = value;
-    updateDetailField(movementName, "routine", next);
-    if (detail.type !== "routine") updateDetailField(movementName, "type", "routine");
-  };
-
   return (
     <div
       className="flex-1 min-h-0 flex flex-col"
@@ -223,24 +216,17 @@ export default function MovementDetailPage({ movementName, onBack }) {
         </div>
       )}
 
-      {/* ---- what a container holds ---- */}
-      {(container || editing) && (
+      {/*
+        A movement that still holds a nested list, only until the one-time
+        conversion has run. Routines live in Routines now — there is no way
+        to make a new one here.
+      */}
+      {container && (
         <div style={{ paddingTop: 20 }}>
-          <span className="label">
-            {container ? `In this routine · ${steps.length}` : "Make this a routine"}
-          </span>
+          <span className="label">In this routine · {steps.length}</span>
           <InsetBlock style={{ marginTop: 10 }}>
             <div className="flex flex-col gap-[10px]">
-              {(editing ? [...(detail.routine || []), ""] : steps).map((step, index) =>
-                editing ? (
-                  <input
-                    key={index}
-                    value={step}
-                    onChange={(e) => setStep(index, e.target.value)}
-                    placeholder="Add a movement…"
-                    style={{ ...inputStyle, height: 38 }}
-                  />
-                ) : (
+              {steps.map((step, index) => (
                   <button
                     key={index}
                     type="button"
@@ -270,8 +256,7 @@ export default function MovementDetailPage({ movementName, onBack }) {
                     </span>
                     <span style={{ fontSize: 14, color: "var(--color-text)" }}>{step}</span>
                   </button>
-                )
-              )}
+              ))}
             </div>
           </InsetBlock>
         </div>

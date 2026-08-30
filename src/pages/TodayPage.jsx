@@ -146,6 +146,7 @@ export default function TodayPage({
   onAddMeasurement,
   onBuildRoutine,
   onOpenMovement,
+  onRunRoutine,
 }) {
   const [swapping, setSwapping] = useState(false);
 
@@ -288,14 +289,13 @@ export default function TodayPage({
       {segmentControl}
 
       <div className="hero-card flex-none flex flex-col gap-[18px]" style={{ padding: 22 }}>
-        {/* A charge draw, seeded once a day. The scrim is 210px over a 190px
-            panel so the type never lands on the busy edge of the image. */}
+        {/* A charge draw, seeded once a day, filling the whole card. The
+            horizontal scrim runs the full width so the type sits on the
+            opaque left end and the art still reads on the right. */}
         <ArtLayer
           mood="charge"
           seedKey={artSeed.today(dateKey(), upNext.day.id)}
           scrim="heroCard"
-          style={{ left: "auto", width: 210 }}
-          artStyle={{ left: 20 }}
         />
 
         <div className="relative flex flex-col gap-[5px]">
@@ -375,9 +375,17 @@ export default function TodayPage({
           planDays={planDays}
           routines={routines}
           currentDayId={upNext.day.id}
-          onPick={(dayId) => {
+          onPickDay={(dayId) => {
             setSwapping(false);
             onBeginSession(dayId, { isSwap: dayId !== upNext.day.id });
+          }}
+          onPickRoutine={(routine) => {
+            setSwapping(false);
+            onRunRoutine(routine);
+          }}
+          onBuild={() => {
+            setSwapping(false);
+            onBuildRoutine();
           }}
           onClose={() => setSwapping(false)}
         />
@@ -394,7 +402,18 @@ export default function TodayPage({
  * afterwards. That is what lets a plan survive a day where the squat rack was
  * taken.
  */
-function SwapSheet({ planDays, routines, currentDayId, onPick, onClose }) {
+function SwapSheet({
+  planDays,
+  routines,
+  currentDayId,
+  onPickDay,
+  onPickRoutine,
+  onBuild,
+  onClose,
+}) {
+  const dayRoutineIds = new Set(planDays.map((day) => day.routineId));
+  const offPlan = Object.values(routines || {}).filter((r) => !dayRoutineIds.has(r.id));
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}>
       <button type="button" style={{ flex: 1 }} onClick={onClose} aria-label="Close" />
@@ -419,7 +438,7 @@ function SwapSheet({ planDays, routines, currentDayId, onPick, onClose }) {
             <button
               key={day.id}
               type="button"
-              onClick={() => onPick(day.id)}
+              onClick={() => onPickDay(day.id)}
               className="row-card flex justify-between items-center w-full text-left press"
             >
               <div className="flex flex-col gap-[2px] min-w-0">
@@ -438,7 +457,32 @@ function SwapSheet({ planDays, routines, currentDayId, onPick, onClose }) {
             </button>
           );
         })}
-        <button type="button" className="btn-secondary" onClick={onClose}>
+        {/* Anything on the shelf, not only the days of this plan. */}
+        {offPlan.length > 0 && (
+          <>
+            <span className="label" style={{ paddingTop: 6 }}>
+              Off the plan
+            </span>
+            {offPlan.map((routine) => (
+              <button
+                key={routine.id}
+                type="button"
+                onClick={() => onPickRoutine(routine)}
+                className="row-card flex justify-between items-center w-full text-left press"
+              >
+                <span className="row-title truncate">{routine.name}</span>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)", flex: "none" }}>
+                  {(routine.movements || []).length} movements
+                </span>
+              </button>
+            ))}
+          </>
+        )}
+
+        <button type="button" className="btn-secondary" onClick={onBuild}>
+          Build one now
+        </button>
+        <button type="button" className="link-teal" onClick={onClose}>
           Cancel
         </button>
       </div>

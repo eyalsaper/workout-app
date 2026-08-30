@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { useFirebaseSync } from "../hooks/useFirebaseSync";
-import { isRestEntry, cleanName, setCountFor, setDataFor } from "../lib/format";
+import { containerSteps, isContainer, isRestEntry, cleanName, setCountFor, setDataFor } from "../lib/format";
 import {
   dateKey,
   detectNewBests,
@@ -10,6 +10,7 @@ import {
   weekKey,
   weekKeyFromDay,
 } from "../lib/training";
+import { emptyTargets, rolledOver, targetsOverview } from "../lib/targets";
 import {
   PROGRAM_VERSION,
   advance,
@@ -228,6 +229,10 @@ export function WorkoutProvider({ children }) {
     version: 0,
   });
   const [routines, setRoutines, routinesReady] = useFirebaseSync(`${base}/routines`, {});
+  const [targets, setTargets, targetsReady] = useFirebaseSync(
+    `${base}/targets`,
+    emptyTargets()
+  );
 
   const isReady =
     bankReady &&
@@ -244,7 +249,8 @@ export function WorkoutProvider({ children }) {
     savedWorkoutsReady &&
     programReady &&
     legacyProgramReady &&
-    routinesReady;
+    routinesReady &&
+    targetsReady;
 
   /**
    * §7.5 — everyone lands in plan mode, once, silently.
@@ -321,6 +327,7 @@ export function WorkoutProvider({ children }) {
     isReady,
     programs,
     legacyProgram,
+    targets,
     plans,
     planNames,
     exerciseBank,
@@ -328,7 +335,128 @@ export function WorkoutProvider({ children }) {
     rawSettings,
     setPrograms,
     setRoutines,
+    setTargets,
   ]);
+
+  /*
+   * Containers move out of Movements and into Routines.
+   *
+   * A movement holding a list of other movements was never an exercise — it
+   * was a routine filed in the wrong drawer, which is why it showed up asking
+   * for a load and three sets. Converted once, in place: the list becomes a
+   * real routine, any plan day that pointed at the movement points at the
+   * routine instead, and the movement's nested list is cleared.
+   *
+   * Runs alongside the programme migration and is likewise additive — no
+   * session is touched, and the movement itself survives as a plain exercise.
+   */
+  const containersRef = useRef(false);
+  useEffect(() => {
+    if (!isReady || containersRef.current) return;
+    if (program?.version !== PROGRAM_VERSION) return;
+
+    const containers = Object.entries(exerciseDetails || {}).filter(([, detail]) =>
+      isContainer(detail)
+    );
+    if (!containers.length) return;
+    containersRef.current = true;
+
+    const madeRoutines = {};
+    const routineForName = {};
+    containers.forEach(([name, detail]) => {
+      const steps = containerSteps(detail);
+      if (!steps.length) return;
+
+      /*
+       * A routine of this name usually already exists — the programme
+       * migration built one when the container was a day of the plan, holding
+       * the container's own name as its only movement. Fill THAT one rather
+       * than making a second routine with the same name.
+       */
+      const existing = Object.values(routines || {}).find((r) => r.name === name);
+      const id = existing?.id || `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}${Object.keys(madeRoutines).length}`;
+      routineForName[name] = id;
+      madeRoutines[id] = {
+        id,
+        name,
+        focus: existing?.focus || "",
+        movements: steps.map((step, order) => {
+          const bank = exerciseBank?.[step] || {};
+          return {
+            movementId: step,
+            order,
+            sets: Math.max(1, parseInt(bank.sets, 10) || 3),
+            reps: bank.reps || "",
+            targetLoadKg: parseFloat(bank.weight) || 0,
+          };
+        }),
+      };
+    });
+
+    if (!Object.keys(madeRoutines).length) return;
+    setRoutines((prev) => ({ ...prev, ...madeRoutines }));
+
+    // Clear the nested list so the movement stops reading as a routine.
+    setExerciseDetails((prev) => {
+      const next = { ...prev };
+      Object.keys(routineForName).forEach((name) => {
+        next[name] = { ...next[name], type: "explanation", routine: [], routineChecked: {} };
+      });
+      return next;
+    });
+
+    // Point any day that used the movement-as-routine at the real routine.
+    const days = orderedDays(program);
+    const rebound = days.map((day) => {
+      const match = Object.keys(routineForName).find((name) => day.name === name);
+      return match ? { ...day, routineId: routineForName[match] } : day;
+    });
+    if (rebound.some((day, i) => day.routineId !== days[i].routineId)) {
+      setPrograms((prev) => ({
+        ...prev,
+        [activeProgramId]: { ...prev[activeProgramId], days: rebound },
+      }));
+    }
+  }, [
+    isReady,
+    program,
+    activeProgramId,
+    exerciseDetails,
+    exerciseBank,
+    routines,
+    setRoutines,
+    setExerciseDetails,
+    setPrograms,
+  ]);
+
+  /*
+   * An 'onComplete' group rolls over on the next launch after it was filled,
+   * not the instant the last target lands — the way a closed round shows you
+   * 8H before round 9 begins. You get to see the group finished.
+   */
+  const rolledRef = useRef(false);
+  useEffect(() => {
+    if (!isReady || rolledRef.current) return;
+    rolledRef.current = true;
+    const view = targetsOverview({
+      targets,
+      sessions,
+      exerciseBank,
+      routines,
+      habits: globalTracker,
+    });
+    const patch = {};
+    if (view.config.habitCycle === "onComplete" && view.habitsComplete) {
+      patch.habitState = rolledOver();
+    }
+    if (view.config.workoutCycle === "onComplete" && view.workoutComplete) {
+      patch.workoutState = rolledOver();
+    }
+    if (Object.keys(patch).length) {
+      setTargets((prev) => ({ ...emptyTargets(), ...(prev || {}), ...patch }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady]);
 
   const value = useMemo(() => {
     // ---- Exercise bank ----
@@ -1155,6 +1283,97 @@ export function WorkoutProvider({ children }) {
     const saveRoutine = (routine) =>
       setRoutines((prev) => ({ ...prev, [routine.id]: routine }));
 
+    /**
+     * Routines are deleted for real. Any plan day pointing at one loses that
+     * day — a day with no routine has nothing to train — and the cursor is
+     * reconciled so the day that was up next stays up next.
+     */
+    const deleteRoutine = (routineId) => {
+      setRoutines((prev) => {
+        const next = { ...prev };
+        delete next[routineId];
+        return next;
+      });
+      const anchorId = nextDay(program)?.day?.id;
+      const remaining = orderedDays(program)
+        .filter((day) => day.routineId !== routineId)
+        .map((day, order) => ({ ...day, order }));
+      if (remaining.length !== orderedDays(program).length) {
+        writeProgram({
+          days: remaining,
+          cursor: reconcileCursor(remaining, program?.cursor, anchorId),
+        });
+      }
+    };
+
+    // ---- targets ----
+
+    const targetsView = targetsOverview({
+      targets,
+      sessions,
+      exerciseBank,
+      routines,
+      habits: globalTracker,
+    });
+
+    const writeTargets = (patch) =>
+      setTargets((prev) => ({ ...emptyTargets(), ...(prev || {}), ...patch }));
+
+    /**
+     * Ticking a habit or a manual target.
+     *
+     * The write carries `startedAt` because reading may have rolled the cycle
+     * over in memory — a weekly group whose week has passed reads as empty,
+     * and the first tick of the new week is what commits that.
+     */
+    const toggleHabit = (index) => {
+      const state = targetsView.habitState;
+      writeTargets({
+        habitState: {
+          startedAt: state.startedAt,
+          checked: { ...state.checked, [index]: !state.checked[index] },
+        },
+      });
+    };
+
+    const toggleTarget = (id) => {
+      const state = targetsView.workoutState;
+      writeTargets({
+        workoutState: {
+          startedAt: state.startedAt,
+          checked: { ...state.checked, [id]: !state.checked[id] },
+        },
+      });
+    };
+
+    const addTarget = (target) =>
+      writeTargets({ items: [...(targetsView.config.items || []), target] });
+
+    const updateTarget = (id, patch) =>
+      writeTargets({
+        items: (targetsView.config.items || []).map((t) =>
+          t.id === id ? { ...t, ...patch } : t
+        ),
+      });
+
+    const removeTarget = (id) =>
+      writeTargets({
+        items: (targetsView.config.items || []).filter((t) => t.id !== id),
+      });
+
+    const setTargetCycle = (group, cycle) =>
+      writeTargets(
+        group === "habits"
+          ? { habitCycle: cycle, habitState: rolledOver() }
+          : { workoutCycle: cycle, workoutState: rolledOver() }
+      );
+
+    /** "Cleared 4 days ago · tap to reset" — start the window again by hand. */
+    const resetTargetGroup = (group) =>
+      writeTargets(
+        group === "habits" ? { habitState: rolledOver() } : { workoutState: rolledOver() }
+      );
+
     const newLocalId = (prefix) =>
       `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
@@ -1217,6 +1436,27 @@ export function WorkoutProvider({ children }) {
       });
       setRoutines((prev) => ({ ...prev, ...cloned }));
       return ids;
+    };
+
+    /** A routine built from a picked list of movements, with bank defaults. */
+    const saveBuiltRoutine = (name, movementNames) => {
+      const id = newLocalId("r");
+      saveRoutine({
+        id,
+        name: name.trim(),
+        focus: "",
+        movements: (movementNames || []).map((movementId, order) => {
+          const bank = exerciseBank?.[movementId] || {};
+          return {
+            movementId,
+            order,
+            sets: Math.max(1, parseInt(bank.sets, 10) || 3),
+            reps: bank.reps || "",
+            targetLoadKg: parseFloat(bank.weight) || 0,
+          };
+        }),
+      });
+      return id;
     };
 
     /** Adds one routine to the plan as its next day. Used by "Build my own". */
@@ -1366,6 +1606,8 @@ export function WorkoutProvider({ children }) {
       routines,
       getRoutine,
       saveRoutine,
+      deleteRoutine,
+      saveBuiltRoutine,
       cloneTemplateRoutines,
       createProgramFromTemplate,
       addRoutineAsDay,
@@ -1373,6 +1615,16 @@ export function WorkoutProvider({ children }) {
       lastSessionDate,
       loggedToday,
       skips: program?.skips || [],
+
+      // ---- targets ----
+      targets: targetsView,
+      toggleHabit,
+      toggleTarget,
+      addTarget,
+      updateTarget,
+      removeTarget,
+      setTargetCycle,
+      resetTargetGroup,
       advanceCursor,
       skipCurrentDay,
       startNextRound,

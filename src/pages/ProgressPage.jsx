@@ -51,7 +51,7 @@ function movingUp(sessions, bodyweightKg, weeks = 8) {
     .slice(0, 3);
 }
 
-export default function ProgressPage({ segment = "charts", onSegmentChange, onCloseChapter }) {
+export default function ProgressPage({ segments, onCloseChapter }) {
   const { sessions, bodyweightKg, program, roundInfo } = useWorkout();
 
   const { series, thisWeekKg, deltaPct } = eightWeekSeries(sessions, bodyweightKg);
@@ -89,7 +89,7 @@ export default function ProgressPage({ segment = "charts", onSegmentChange, onCl
 
       <Rule style={{ margin: "16px 0" }} />
 
-      <PosterSegments options={SEGMENTS} value={segment} onChange={onSegmentChange} />
+      {segments}
 
       <div style={{ paddingTop: 20 }}>
         <span className="label">Last eight weeks</span>

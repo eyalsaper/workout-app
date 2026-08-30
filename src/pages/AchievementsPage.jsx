@@ -44,13 +44,7 @@ function TierBar({ rankIndex }) {
   );
 }
 
-export default function AchievementsPage({
-  segment = "records",
-  onSegmentChange,
-  onOpenMilestones,
-  onOpenMovement,
-  onOpenLadder,
-}) {
+export default function AchievementsPage({ segments, onOpenMilestones, onOpenLadder }) {
   const { sessions, bodyweightKg, settings } = useWorkout();
   const sex = settings.sex;
 
@@ -75,18 +69,11 @@ export default function AchievementsPage({
       className="flex-1 min-h-0 flex flex-col"
       style={{ background: "var(--color-poster)", overflowY: "auto" }}
     >
-      {/* A 116 × 196 side crop, clipped by the header and scrimmed to the
-          left. The one slot that overrides the image's own position. */}
-      <div className="relative flex-none" style={{ height: 196, padding: "0 24px" }}>
-        <ArtLayer
-          mood="triumph"
-          seedKey={artSeed.record(latestPrId)}
-          scrim="band"
-          size="116px auto"
-          position="center top"
-          style={{ left: "auto", width: 116 }}
-          scrimStyle={{ width: 240, right: 0, left: "auto" }}
-        />
+      {/* The draw owns the whole header rather than a side crop — a 116px
+          strip of a portrait read as a sliver of someone's shoulder. Full
+          bleed with the poster scrim, so the tier sits on the opaque end. */}
+      <div className="relative flex-none" style={{ height: 240, padding: "0 24px" }}>
+        <ArtLayer mood="triumph" seedKey={artSeed.record(latestPrId)} scrim="poster" />
         <div className="relative flex flex-col justify-end gap-[6px]" style={{ height: "100%", paddingBottom: 18 }}>
           <span className="kicker">Record book</span>
           <span
@@ -109,7 +96,7 @@ export default function AchievementsPage({
       </div>
 
       <div className="flex flex-col flex-1" style={{ padding: "0 24px 16px" }}>
-        <PosterSegments options={SEGMENTS} value={segment} onChange={onSegmentChange} />
+        {segments}
 
         <div style={{ paddingTop: 18 }}>
           {standings.map(({ name, standing }, index) => (

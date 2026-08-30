@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
 import ArtBand from "../components/ArtBand";
+import { Rule } from "../components/poster";
 import { countSets } from "../lib/session";
 import { dateKey, formatTonnage } from "../lib/training";
 import { exportMonthCsv } from "../lib/csv";
@@ -41,7 +42,7 @@ function shortDate(day) {
   });
 }
 
-export default function LiftHistoryPage({ segmentControl, onOpenSession, onOpenMovement }) {
+export default function LiftHistoryPage({ segments, onOpenSession, onOpenMovement }) {
   const { sessions, settings, planDays, dayIdForSession } = useWorkout();
   const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -108,9 +109,25 @@ export default function LiftHistoryPage({ segmentControl, onOpenSession, onOpenM
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-[14px]">
-      <span className="screen-title flex-none">Workout</span>
-      {segmentControl}
+    <div
+      className="flex-1 min-h-0 flex flex-col gap-[14px]"
+      style={{ background: "var(--color-poster)", overflowY: "auto", padding: "6px 24px 16px" }}
+    >
+      {/* A Progress screen now, so it wears the poster shell and the same
+          segment row as Charts, Records and Body. */}
+      <div className="flex flex-col gap-[6px] flex-none">
+        <span className="kicker">History</span>
+        <span className="big-number tabular">{monthSessions.length}</span>
+        <span style={{ fontSize: 13, color: "var(--color-muted-poster)" }}>
+          {/* The band below names the month, so this line does not. */}
+          {monthSessions.length
+            ? `session${monthSessions.length === 1 ? "" : "s"} · ${formatTonnage(monthTonnage)} moved`
+            : "nothing logged this month"}
+        </span>
+      </div>
+
+      <Rule />
+      {segments}
 
       {/* The band IS the month header — the card below must not repeat it. */}
       <ArtBand

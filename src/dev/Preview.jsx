@@ -4,6 +4,8 @@ import { AuthContext } from "../state/AuthContext";
 import BottomNav from "../components/BottomNav";
 import TodayPage from "../pages/TodayPage";
 import RoutinesPage from "../pages/RoutinesPage";
+import TargetsPage from "../pages/TargetsPage";
+import ProgramsPage from "../pages/ProgramsPage";
 import LiftHistoryPage from "../pages/LiftHistoryPage";
 import RoutineEditorPage from "../pages/RoutineEditorPage";
 import SessionPage from "../pages/SessionPage";
@@ -22,6 +24,7 @@ import LiftLadderPage from "../pages/LiftLadderPage";
 import { loadArtLibrary, setArtPreferences } from "../lib/art";
 import { advance, nextDay, orderedDays, toScheduleMode } from "../lib/plan";
 import { roundProgress } from "../lib/training";
+import { emptyTargets, targetsOverview } from "../lib/targets";
 import {
   BODYWEIGHT_LOG,
   DAYS,
@@ -46,11 +49,11 @@ import {
 const WORKOUT_SEGMENTS = [
   ["today", "Today"],
   ["routines", "Routines"],
-  ["history", "History"],
+  ["targets", "Targets"],
 ];
 
 // Poster screens own their own 24px column, so the shell adds none.
-const POSTER = new Set(["8f","8g","8h","8i","8p","8j","8k","8l","8m","8o","movement","ledger","container"]);
+const POSTER = new Set(["8f","8g","8h","8i","8p","8j","8k","8l","8m","8o","8e","movement","ledger","container"]);
 const NO_TAB_BAR = new Set(["8f", "8g", "8h", "8m", "8o"]);
 
 const TAB_FOR = {
@@ -58,7 +61,7 @@ const TAB_FOR = {
   "8b": "workout",
   "8c": "workout",
   "8d": "workout",
-  "8e": "workout",
+  "8e": "progress",
   "8g": "workout",
   "8h": "workout",
   "8i": "program",
@@ -67,6 +70,8 @@ const TAB_FOR = {
   "8k": "progress",
   "8l": "progress",
   "8m": "progress",
+  targets: "workout",
+  blocks: "program",
   movement: "progress",
   container: "progress",
   ledger: "progress",
@@ -137,6 +142,31 @@ function useFixtureWorkout(screen) {
       saveWorkout: () => {},
       deleteWorkout: () => {},
       globalTracker: ["Drink 2L water", "Stretch 10 mins", "Hit protein goal"],
+      deleteRoutine: () => {},
+      saveBuiltRoutine: () => {},
+      targets: targetsOverview({
+        targets: {
+          ...emptyTargets(),
+          habitState: { startedAt: new Date().toISOString().slice(0, 10), checked: { 0: true, 1: true } },
+          workoutState: { startedAt: "2026-08-01", checked: {} },
+          items: [
+            { id: "t1", kind: "exercise", ref: "Back Squat", goal: 2 },
+            { id: "t2", kind: "muscle", ref: "Quads", goal: 3 },
+            { id: "t3", kind: "sessions", goal: 4, manual: true },
+          ],
+        },
+        sessions: SESSIONS,
+        exerciseBank: { "Back Squat": { muscleGroups: ["Quads", "Glutes"] } },
+        routines: ROUTINES,
+        habits: ["Drink 2L water", "Stretch 10 mins", "Hit protein goal"],
+      }),
+      toggleHabit: () => {},
+      toggleTarget: () => {},
+      addTarget: () => {},
+      updateTarget: () => {},
+      removeTarget: () => {},
+      setTargetCycle: () => {},
+      resetTargetGroup: () => {},
       globalTrackerChecked: { 0: true },
       toggleTrackerItem: () => {},
       resetTracker: () => {},
@@ -245,6 +275,14 @@ export default function Preview({ screen }) {
     loadArtLibrary().then(() => setArtReady(true));
   }, []);
 
+  const progressSegments = (
+    <div className="segmented-poster">
+      {[["charts","Charts"],["records","Records"],["body","Body"],["history","History"]].map(([k,l]) => (
+        <button key={k} type="button" data-active={k === "charts"}>{l}</button>
+      ))}
+    </div>
+  );
+
   const segmentControl = (
     <div className="segmented">
       {WORKOUT_SEGMENTS.map(([key, label]) => (
@@ -262,17 +300,28 @@ export default function Preview({ screen }) {
   const SCREENS = {
     "8a": <TodayPage segmentControl={segmentControl} onBeginSession={noop} onOpenSettings={noop} onSwapRoutine={noop} onBuildRoutine={noop} onAddMeasurement={noop} />,
     "8b": <TodayPage segmentControl={segmentControl} onBeginSession={noop} onOpenSettings={noop} onSwapRoutine={noop} onBuildRoutine={noop} onAddMeasurement={noop} />,
-    "8c": <RoutinesPage segmentControl={segmentControl} onOpenRoutine={noop} onBuildRoutine={noop} onRunTemplate={noop} />,
+    "8c": (
+      <RoutinesPage
+        segmentControl={segmentControl}
+        onBuild={noop}
+        onRunRoutine={noop}
+        onRunPremade={noop}
+        onRunTemplate={noop}
+        onOpenRoutine={noop}
+      />
+    ),
+    targets: <TargetsPage segmentControl={segmentControl} />,
+    blocks: <ProgramsPage onBack={noop} />,
     "8d": <RoutineEditorPage routineId="r3" readOnly={false} onBack={noop} />,
-    "8e": <LiftHistoryPage segmentControl={segmentControl} onOpenSession={noop} />,
+    "8e": <LiftHistoryPage segments={progressSegments} onOpenSession={noop} onOpenMovement={noop} />,
     "8f": <SessionPage sessionKey="s_active" onExit={noop} onFinish={noop} />,
     "8g": <SessionSummaryPage sessionKey="s1" outcome={{ showRoundClosed: false }} onClose={noop} />,
     "8h": <SessionSummaryPage sessionKey="s1" outcome={{ showRoundClosed: true }} onClose={noop} />,
     "8i": <ProgramPage onEditPlan={noop} onOpenRoutine={noop} />,
     "8p": <ProgramPage onEditPlan={noop} onOpenRoutine={noop} />,
-    "8j": <ProgressPage segment="charts" onSegmentChange={noop} />,
-    "8k": <AchievementsPage segment="records" onSegmentChange={noop} onOpenMilestones={noop} />,
-    "8l": <BodyPage segment="body" onSegmentChange={noop} />,
+    "8j": <ProgressPage segments={progressSegments} onCloseChapter={noop} />,
+    "8k": <AchievementsPage segments={progressSegments} onOpenMilestones={noop} onOpenLadder={noop} />,
+    "8l": <BodyPage segments={progressSegments} />,
     "8m": <MilestonePage onClose={noop} />,
     "8n": <SettingsPage onBack={noop} onOpenArtLibrary={noop} />,
     "8q": <ArtLibraryPage onBack={noop} />,

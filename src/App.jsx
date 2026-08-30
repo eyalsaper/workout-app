@@ -4,8 +4,10 @@ import { WorkoutProvider, useWorkout } from "./state/WorkoutContext";
 import { AuthProvider, useAuth } from "./state/AuthContext";
 import SignInScreen from "./components/SignInScreen";
 import BottomNav from "./components/BottomNav";
+import { PosterSegments } from "./components/poster";
 import TodayPage from "./pages/TodayPage";
 import RoutinesPage from "./pages/RoutinesPage";
+import TargetsPage from "./pages/TargetsPage";
 import LiftHistoryPage from "./pages/LiftHistoryPage";
 import RoutineEditorPage from "./pages/RoutineEditorPage";
 import SessionPage from "./pages/SessionPage";
@@ -57,9 +59,19 @@ function useArtLibrary(settings) {
   }, [settings.characterArt, settings.artOnlyMine, settings.hiddenArtIds]);
 }
 
+// History moved to Progress — it is a record, not something you act on.
+// Targets took its place, because targets are what you are doing this week.
 const WORKOUT_SEGMENTS = [
   ["today", "Today"],
   ["routines", "Routines"],
+  ["targets", "Targets"],
+];
+
+// Four fit at 390px only with the shorter middle label.
+const PROGRESS_SEGMENTS = [
+  ["charts", "Charts"],
+  ["records", "Records"],
+  ["body", "Body"],
   ["history", "History"],
 ];
 
@@ -98,6 +110,7 @@ function Shell() {
     startPlanDay,
     startAdHocSession,
     cloneTemplateRoutines,
+    saveBuiltRoutine,
   } = useWorkout();
 
   useArtLibrary(settings);
@@ -137,6 +150,12 @@ function Shell() {
   const openSettings = () => {
     if (activePage !== "settings") setPageBeforeSettings(activePage);
     setActivePage("settings");
+  };
+
+  /** Runs a list of movements now, without touching the programme. */
+  const beginAdHoc = (label, names) => {
+    setActiveSessionKey(startAdHocSession(label, names));
+    setActivePage("session");
   };
 
   const beginSession = (dayId, options) => {
@@ -197,30 +216,42 @@ function Shell() {
     setActivePage("movementDetail");
   };
 
+  const progressSegments = (
+    <PosterSegments
+      options={PROGRESS_SEGMENTS}
+      value={progressSegment}
+      onChange={setProgressSegment}
+    />
+  );
+
   const progressPages = {
     charts: (
       <ProgressPage
-        segment="charts"
-        onSegmentChange={setProgressSegment}
+        segments={progressSegments}
         onCloseChapter={() => setActivePage("milestone")}
       />
     ),
     records: (
       <AchievementsPage
-        segment="records"
-        onSegmentChange={setProgressSegment}
+        segments={progressSegments}
         onOpenMilestones={() => {
           setLadderLift(null);
           setActivePage("ledger");
         }}
-        onOpenMovement={(name) => openMovement(name, "progress")}
         onOpenLadder={(name) => {
           setLadderLift(name);
           setActivePage("ledger");
         }}
       />
     ),
-    body: <BodyPage segment="body" onSegmentChange={setProgressSegment} />,
+    body: <BodyPage segments={progressSegments} />,
+    history: (
+      <LiftHistoryPage
+        segments={progressSegments}
+        onOpenSession={openSessionSummary}
+        onOpenMovement={(name) => openMovement(name, "progress")}
+      />
+    ),
   };
 
   return (
@@ -276,10 +307,10 @@ function Shell() {
                 onBeginSession={beginSession}
                 onOpenSettings={openSettings}
                 onOpenMovement={(name) => openMovement(name, "workout")}
-                onBuildRoutine={() => {
-                  setEditingRoutine({ id: null, readOnly: false });
-                  setActivePage("routineEditor");
-                }}
+                onRunRoutine={(routine) =>
+                  beginAdHoc(routine.name, (routine.movements || []).map((m) => m.movementId))
+                }
+                onBuildRoutine={() => setActivePage("buildWorkout")}
                 onAddMeasurement={() => {
                   setProgressSegment("body");
                   setActivePage("progress");
@@ -290,13 +321,11 @@ function Shell() {
             {activePage === "workout" && workoutSegment === "routines" && (
               <RoutinesPage
                 segmentControl={workoutChips}
+                onBuild={() => setActivePage("buildWorkout")}
+                onRunRoutine={(routine) => beginAdHoc(routine.name, routine.movements.map((m) => m.movementId))}
+                onRunPremade={(w) => beginAdHoc(w.name, w.exercises)}
                 onOpenRoutine={(id) => {
                   setEditingRoutine({ id, readOnly: true });
-                  setActivePage("routineEditor");
-                }}
-                onBuildWorkout={() => setActivePage("buildWorkout")}
-                onBuildRoutine={() => {
-                  setEditingRoutine({ id: null, readOnly: false });
                   setActivePage("routineEditor");
                 }}
                 onRunTemplate={(template) => {
@@ -309,12 +338,8 @@ function Shell() {
               />
             )}
 
-            {activePage === "workout" && workoutSegment === "history" && (
-              <LiftHistoryPage
-                segmentControl={workoutChips}
-                onOpenSession={openSessionSummary}
-                onOpenMovement={(name) => openMovement(name, "workout")}
-              />
+            {activePage === "workout" && workoutSegment === "targets" && (
+              <TargetsPage segmentControl={workoutChips} />
             )}
 
             {activePage === "routineEditor" && (
@@ -407,9 +432,11 @@ function Shell() {
             {activePage === "buildWorkout" && (
               <BuildWorkoutPage
                 onBack={() => setActivePage("workout")}
-                onStart={(label, names) => {
-                  setActiveSessionKey(startAdHocSession(label, names));
-                  setActivePage("session");
+                onStartOneOff={(names) => beginAdHoc("Your workout", names)}
+                onSaveRoutine={(name, names) => {
+                  saveBuiltRoutine(name, names);
+                  setActivePage("workout");
+                  setWorkoutSegment("routines");
                 }}
               />
             )}
