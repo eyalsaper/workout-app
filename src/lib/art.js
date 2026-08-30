@@ -69,8 +69,37 @@ let prefs = {
   userImages: [],
 };
 
+/*
+ * Anything that can change what a slot draws bumps this and tells its
+ * listeners.
+ *
+ * A slot picks during render and memoises on its seed key, so without a
+ * signal the first pick — taken before library.json has arrived, which
+ * returns null — would be the only one it ever made. Whether art appeared at
+ * all then came down to whether the fetch beat the first paint.
+ */
+let version = 0;
+const listeners = new Set();
+
+function bump() {
+  version += 1;
+  listeners.forEach((fn) => fn(version));
+}
+
+/** Current library revision. Changes when the library or preferences change. */
+export function artVersion() {
+  return version;
+}
+
+/** Subscribe to library and preference changes. Returns an unsubscribe. */
+export function onArtChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function setArtPreferences(next) {
   prefs = { ...prefs, ...next };
+  bump();
 }
 
 /** Resolves a library entry's `file` against Vite's base (./ on Pages). */
@@ -99,6 +128,7 @@ export async function loadArtLibrary() {
   }
   isLoaded = true;
   pruneDraws();
+  bump();
   return shipped;
 }
 

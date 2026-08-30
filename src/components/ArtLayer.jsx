@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { artPosition, artUrl, pickArt } from "../lib/art";
+import React, { useEffect, useMemo, useState } from "react";
+import { artPosition, artUrl, artVersion, onArtChange, pickArt } from "../lib/art";
 
 /*
  * One art slot. A screen asks for a MOOD and gets whatever the library hands
@@ -28,10 +28,16 @@ const SCRIMS = {
  */
 export function useArtDraw(mood, seedKey, exclude = []) {
   const excludeKey = exclude.join(",");
+  // The library arrives after the first paint, so the draw has to be able to
+  // happen again once it does — otherwise a slot that rendered too early
+  // keeps its null forever.
+  const [version, setVersion] = useState(artVersion);
+  useEffect(() => onArtChange(setVersion), []);
+
   return useMemo(
     () => pickArt(mood, seedKey, { exclude }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mood, seedKey, excludeKey]
+    [mood, seedKey, excludeKey, version]
   );
 }
 

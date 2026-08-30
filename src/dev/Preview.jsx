@@ -20,6 +20,7 @@ import MilestonePage from "../pages/MilestonePage";
 import SettingsPage from "../pages/SettingsPage";
 import ArtLibraryPage from "../pages/ArtLibraryPage";
 import FirstRunPage from "../pages/FirstRunPage";
+import SignInScreen from "../components/SignInScreen";
 import MovementDetailPage from "../pages/MovementDetailPage";
 import LiftLadderPage from "../pages/LiftLadderPage";
 import { loadArtLibrary, setArtPreferences } from "../lib/art";
@@ -54,8 +55,8 @@ const WORKOUT_SEGMENTS = [
 ];
 
 // Poster screens own their own 24px column, so the shell adds none.
-const POSTER = new Set(["8f","8g","8h","8i","8p","8j","8k","8l","8m","8o","8e","movement","ledger","container"]);
-const NO_TAB_BAR = new Set(["8f", "8g", "8h", "8m", "8o"]);
+const POSTER = new Set(["8f","8g","8h","8i","8p","8j","8k","8l","8m","8o","8e","signin","movement","ledger","container"]);
+const NO_TAB_BAR = new Set(["8f", "8g", "8h", "8m", "8o", "signin"]);
 
 const TAB_FOR = {
   "8a": "workout",
@@ -310,7 +311,10 @@ export default function Preview({ screen }) {
     </div>
   );
 
-  if (!artReady) return null;
+  // ?art=slow mounts BEFORE the library resolves, which is what production
+  // does on a cold load. A slot that cannot redraw stays blank forever.
+  const slowArt = new URLSearchParams(window.location.search).get("art") === "slow";
+  if (!artReady && !slowArt) return null;
 
   const noop = () => {};
 
@@ -343,6 +347,7 @@ export default function Preview({ screen }) {
     "8n": <SettingsPage onBack={noop} onOpenArtLibrary={noop} />,
     "8q": <ArtLibraryPage onBack={noop} />,
     "8o": <FirstRunPage onBuildOwn={noop} />,
+    signin: <SignInScreen />,
     "plan": <PlanBuilderPage onBack={noop} onEditDay={noop} />,
     planday: <PlanDayEditorPage dayId="d3" onBack={noop} />,
     movement: <MovementDetailPage movementName="Back Squat" onBack={noop} />,
