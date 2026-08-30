@@ -6,6 +6,7 @@ import TodayPage from "../pages/TodayPage";
 import RoutinesPage from "../pages/RoutinesPage";
 import TargetsPage from "../pages/TargetsPage";
 import ProgramsPage from "../pages/ProgramsPage";
+import PlanDayEditorPage from "../pages/PlanDayEditorPage";
 import LiftHistoryPage from "../pages/LiftHistoryPage";
 import RoutineEditorPage from "../pages/RoutineEditorPage";
 import SessionPage from "../pages/SessionPage";
@@ -72,6 +73,8 @@ const TAB_FOR = {
   "8m": "progress",
   targets: "workout",
   blocks: "program",
+  plan: "program",
+  planday: "program",
   movement: "progress",
   container: "progress",
   ledger: "progress",
@@ -144,6 +147,12 @@ function useFixtureWorkout(screen) {
       globalTracker: ["Drink 2L water", "Stretch 10 mins", "Hit protein goal"],
       deleteRoutine: () => {},
       saveBuiltRoutine: () => {},
+      dayMovements: (day) => day.movements || ROUTINES[day.routineId]?.movements || [],
+      bankMovement: (name, order) => ({ movementId: name, order, sets: 3, reps: "5", targetLoadKg: 0 }),
+      setPlanLength: () => {},
+      updatePlanDay: () => {},
+      seedPlanDay: () => {},
+      saveDayAsRoutine: () => {},
       targets: targetsOverview({
         targets: {
           ...emptyTargets(),
@@ -326,7 +335,8 @@ export default function Preview({ screen }) {
     "8n": <SettingsPage onBack={noop} onOpenArtLibrary={noop} />,
     "8q": <ArtLibraryPage onBack={noop} />,
     "8o": <FirstRunPage onBuildOwn={noop} />,
-    "plan": <PlanBuilderPage onBack={noop} />,
+    "plan": <PlanBuilderPage onBack={noop} onEditDay={noop} />,
+    planday: <PlanDayEditorPage dayId="d3" onBack={noop} />,
     movement: <MovementDetailPage movementName="Back Squat" onBack={noop} />,
     ledger: <LiftLadderPage onBack={noop} />,
     container: <MovementDetailPage movementName="Core Workout" onBack={noop} />,

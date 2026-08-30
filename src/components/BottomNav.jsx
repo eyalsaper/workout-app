@@ -17,7 +17,7 @@ const TABS = [
   {
     key: "program",
     label: "Program",
-    match: ["program", "planBuilder", "routineEditor", "blocks"],
+    match: ["program", "planBuilder", "planDay", "routineEditor", "blocks"],
   },
   {
     key: "progress",

@@ -14,6 +14,7 @@ import SessionPage from "./pages/SessionPage";
 import SessionSummaryPage from "./pages/SessionSummaryPage";
 import ProgramPage from "./pages/ProgramPage";
 import PlanBuilderPage from "./pages/PlanBuilderPage";
+import PlanDayEditorPage from "./pages/PlanDayEditorPage";
 import ProgressPage from "./pages/ProgressPage";
 import AchievementsPage from "./pages/AchievementsPage";
 import BodyPage from "./pages/BodyPage";
@@ -124,6 +125,7 @@ function Shell() {
   const [pageBeforeSettings, setPageBeforeSettings] = useState("workout");
   const [movementName, setMovementName] = useState(null);
   const [ladderLift, setLadderLift] = useState(null);
+  const [editingDayId, setEditingDayId] = useState(null);
   const [pageBeforeMovement, setPageBeforeMovement] = useState("progress");
   const [recovered, setRecovered] = useState(false);
 
@@ -380,14 +382,30 @@ function Shell() {
                 onEditPlan={() => setActivePage("planBuilder")}
                 onOpenBlocks={() => setActivePage("blocks")}
                 onOpenRoutine={(day) => {
-                  setEditingRoutine({ id: day.routineId, readOnly: true });
-                  setActivePage("routineEditor");
+                  setEditingDayId(day.id);
+                  setActivePage("planDay");
                 }}
               />
             )}
 
             {activePage === "planBuilder" && (
-              <PlanBuilderPage onBack={() => setActivePage("program")} />
+              <PlanBuilderPage
+                onBack={() => setActivePage("program")}
+                onEditDay={(dayId) => {
+                  setEditingDayId(dayId);
+                  setActivePage("planDay");
+                }}
+              />
+            )}
+
+            {activePage === "planDay" && editingDayId && (
+              <PlanDayEditorPage
+                dayId={editingDayId}
+                onBack={() => {
+                  setEditingDayId(null);
+                  setActivePage("planBuilder");
+                }}
+              />
             )}
 
             {activePage === "blocks" && (

@@ -1,224 +1,134 @@
-import React, { useState } from "react";
+import React from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import { orderedDays } from "../lib/plan";
 
 /*
- * The plan editor — reached from "Edit this plan" on 8I.
+ * The plan editor — how many workouts, in what order, and what is in each.
  *
- * Reorder, rename, add and remove days. Every save runs the cursor through
- * reconcileCursor (rule 7.2.6), so the day that was up next stays up next
- * wherever it moved to, and no edit ever resets a round.
+ * A plan day is NOT a routine. It owns its own movements, so editing Workout 3
+ * never rewrites Workout 5 and no day has to exist on the shelf first. A
+ * routine can be copied into a day as a starting point, and that is where the
+ * link ends.
  *
- * Reordering is arrows rather than drag: a drag library is a new dependency,
- * and at four to eight rows arrows are faster one-handed anyway.
+ * Reordering runs through reconcileCursor, so the workout that was up next
+ * stays up next wherever it lands, and no edit resets a round.
  */
 
-export default function PlanBuilderPage({ onBack }) {
-  const { program, routines, setPlanDays } = useWorkout();
-  const [days, setDays] = useState(() => orderedDays(program));
-  const [adding, setAdding] = useState(false);
+export default function PlanBuilderPage({ onBack, onEditDay }) {
+  const { planDays, setPlanDays, setPlanLength, dayMovements, program } = useWorkout();
 
   const move = (index, delta) => {
     const target = index + delta;
-    if (target < 0 || target >= days.length) return;
-    const next = [...days];
+    if (target < 0 || target >= planDays.length) return;
+    const next = [...planDays];
     [next[index], next[target]] = [next[target], next[index]];
-    setDays(next.map((day, order) => ({ ...day, order })));
+    setPlanDays(next);
   };
 
-  const rename = (index, name) =>
-    setDays((prev) => prev.map((day, i) => (i === index ? { ...day, name } : day)));
-
-  const remove = (index) =>
-    setDays((prev) => prev.filter((_, i) => i !== index).map((day, order) => ({ ...day, order })));
-
-  const addDay = (routine) => {
-    setDays((prev) => [
-      ...prev,
-      {
-        id: `d_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-        order: prev.length,
-        name: routine.name,
-        routineId: routine.id,
-      },
-    ]);
-    setAdding(false);
-  };
-
-  const save = () => {
-    setPlanDays(days);
-    onBack();
-  };
-
-  const unused = Object.values(routines || {});
+  const count = planDays.length;
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-[14px]">
       <div className="flex items-center justify-between flex-none">
         <button type="button" className="link-teal" onClick={onBack}>
-          Cancel
+          Back
         </button>
         <span
           className="uppercase"
           style={{ fontSize: 11, letterSpacing: "0.12em", fontWeight: 700, color: "var(--color-muted)" }}
         >
-          Edit plan
+          {program?.name || "Plan"}
         </span>
-        <button type="button" style={{ fontSize: 13, color: "var(--color-brass)" }} onClick={save}>
-          Save
-        </button>
+        <span style={{ width: 40 }} />
+      </div>
+
+      {/* How long is the pass through the plan. Everything else follows. */}
+      <div className="card flex-none flex flex-col gap-[10px]" style={{ padding: 16 }}>
+        <span className="label">Workouts in this plan</span>
+        <div className="flex flex-wrap gap-[6px]">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+            <button
+              key={n}
+              type="button"
+              className="mode-chip"
+              data-active={count === n}
+              onClick={() => setPlanLength(n)}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: "var(--color-dim)" }}>
+          One pass through all {count} is a round. Adding or removing never
+          resets the round you are in.
+        </span>
       </div>
 
       <div className="flex flex-col gap-[8px] min-h-0" style={{ overflowY: "auto" }}>
         <span className="label" style={{ paddingLeft: 2 }}>
-          Days
+          The order
         </span>
-        {days.map((day, index) => (
-          <div key={day.id} className="card flex items-center gap-2" style={{ padding: 12 }}>
-            <span
-              className="tabular"
-              style={{
-                width: 22,
-                flex: "none",
-                fontFamily: "var(--font-display)",
-                fontSize: 13,
-                color: "var(--color-dim)",
-              }}
-            >
-              {index + 1}
-            </span>
-            <input
-              value={day.name}
-              onChange={(e) => rename(index, e.target.value)}
-              className="row-title"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: "transparent",
-                outline: "none",
-                caretColor: "var(--color-brass)",
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => move(index, -1)}
-              aria-label={`Move ${day.name} up`}
-              style={{ width: 34, height: 34, flex: "none", color: "var(--color-muted)" }}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              onClick={() => move(index, 1)}
-              aria-label={`Move ${day.name} down`}
-              style={{ width: 34, height: 34, flex: "none", color: "var(--color-muted)" }}
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              onClick={() => remove(index)}
-              aria-label={`Remove ${day.name}`}
-              style={{ fontSize: 12, color: "var(--color-dim)", flex: "none", paddingLeft: 4 }}
-            >
-              Remove
-            </button>
-          </div>
-        ))}
 
-        {/*
-          Auto-progression, per day: when the day comes round again, its
-          target loads go up by this much. A suggestion the app applies rather
-          than one it prints — turn it off and the targets stay put.
-        */}
-        <span className="label" style={{ paddingLeft: 2, paddingTop: 6 }}>
-          When a day comes round again
-        </span>
-        {days.map((day, index) => {
-          const progression = day.progression || { auto: false, incrementKg: 2.5 };
+        {planDays.map((day, index) => {
+          const movements = dayMovements(day);
           return (
-            <div
-              key={`${day.id}-progression`}
-              className="row-card flex items-center justify-between gap-2"
-            >
-              <span className="row-title truncate" style={{ flex: 1 }}>
-                {day.name}
+            <div key={day.id} className="card flex items-center gap-2" style={{ padding: 12 }}>
+              <span
+                className="tabular"
+                style={{
+                  width: 20,
+                  flex: "none",
+                  fontFamily: "var(--font-display)",
+                  fontSize: 13,
+                  color: "var(--color-dim)",
+                }}
+              >
+                {index + 1}
               </span>
+
               <button
                 type="button"
-                className="mode-chip"
-                data-active={progression.auto}
-                style={{ flex: "none" }}
-                onClick={() =>
-                  setDays((prev) =>
-                    prev.map((d, i) =>
-                      i === index
-                        ? { ...d, progression: { ...progression, auto: !progression.auto } }
-                        : d
-                    )
-                  )
-                }
+                onClick={() => onEditDay(day.id)}
+                className="flex flex-col gap-[2px] min-w-0 text-left"
+                style={{ flex: 1 }}
               >
-                {progression.auto ? `+${progression.incrementKg} kg` : "Off"}
+                <span className="row-title truncate">{day.name || `Workout ${index + 1}`}</span>
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  {movements.length
+                    ? `${movements.length} movement${movements.length === 1 ? "" : "s"}`
+                    : "empty — tap to build it"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => move(index, -1)}
+                aria-label={`Move ${day.name} up`}
+                style={{ width: 32, height: 34, flex: "none", color: "var(--color-muted)" }}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(index, 1)}
+                aria-label={`Move ${day.name} down`}
+                style={{ width: 32, height: 34, flex: "none", color: "var(--color-muted)" }}
+              >
+                ↓
               </button>
             </div>
           );
         })}
 
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          style={{
-            height: 52,
-            flex: "none",
-            borderRadius: "var(--radius-row)",
-            border: "1px dashed #3a3f48",
-            color: "var(--color-brass)",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          Add a day
-        </button>
+        {count === 0 && (
+          <span style={{ fontSize: 13, color: "var(--color-dim)" }}>
+            No workouts yet. Pick a number above.
+          </span>
+        )}
       </div>
 
       <span style={{ fontSize: 12, color: "var(--color-dim)", marginTop: "auto" }}>
-        Reordering keeps your place. The day that is up next stays up next.
+        Tap a workout to build or edit it.
       </span>
-
-      {adding && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}>
-          <button type="button" style={{ flex: 1 }} onClick={() => setAdding(false)} aria-label="Close" />
-          <div
-            className="w-full max-w-lg mx-auto flex flex-col gap-2"
-            style={{
-              background: "var(--color-card)",
-              borderTop: "1px solid var(--color-border)",
-              padding: 22,
-              maxHeight: "70dvh",
-              overflowY: "auto",
-            }}
-          >
-            <span className="label">Pick a routine</span>
-            {unused.length === 0 ? (
-              <span style={{ fontSize: 13, color: "var(--color-dim)" }}>
-                No routines yet. Build one on the Routines tab first.
-              </span>
-            ) : (
-              unused.map((routine) => (
-                <button
-                  key={routine.id}
-                  type="button"
-                  onClick={() => addDay(routine)}
-                  className="row-card text-left row-title"
-                >
-                  {routine.name}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

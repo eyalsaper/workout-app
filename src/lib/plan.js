@@ -387,3 +387,63 @@ export function weekdayNameFor(dateString) {
   if (!y) return "";
   return WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
 }
+
+// ---------------------------------------------------- a day owns its workout
+
+/*
+ * A plan day is NOT a routine.
+ *
+ * Days carry their own `movements` list. A routine is a reusable thing on the
+ * shelf you can run one-off or seed a day from — but seeding COPIES, so
+ * editing Day 3 never rewrites a routine that another day also uses, and a
+ * day built from scratch never has to become a shelf item first.
+ *
+ * `routineId` survives on days written before this, and is read as a fallback
+ * so nothing breaks mid-migration.
+ */
+export function dayMovements(day, routines) {
+  if (Array.isArray(day?.movements)) return day.movements;
+  const routine = routines?.[day?.routineId];
+  return routine?.movements || [];
+}
+
+/** A day's movement list as a standalone workout, for the session builder. */
+export function dayAsWorkout(day, routines) {
+  return {
+    id: day?.id,
+    name: day?.name || "Workout",
+    focus: day?.focus || "",
+    movements: dayMovements(day, routines),
+  };
+}
+
+/** Copies a routine's movements onto a day. The routine is left alone. */
+export function seedDayFromRoutine(day, routine) {
+  return {
+    ...day,
+    name: day.name || routine.name,
+    focus: routine.focus || "",
+    movements: (routine.movements || []).map((movement, order) => ({ ...movement, order })),
+    // Provenance only — the day does not follow the routine after this.
+    seededFrom: routine.id,
+    routineId: null,
+  };
+}
+
+/**
+ * Gives every day its own movement list, copied from whatever routine it used
+ * to point at. Idempotent: days that already own their movements are skipped.
+ */
+export function detachDaysFromRoutines(days, routines) {
+  return (days || []).map((day) => {
+    if (Array.isArray(day.movements)) return day;
+    const routine = routines?.[day.routineId];
+    return {
+      ...day,
+      movements: (routine?.movements || []).map((movement, order) => ({ ...movement, order })),
+      focus: day.focus || routine?.focus || "",
+      seededFrom: day.routineId || null,
+      routineId: null,
+    };
+  });
+}

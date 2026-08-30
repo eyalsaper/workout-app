@@ -132,7 +132,7 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
     roundInfo,
     lastSessionDate,
     setProgramMode,
-    getRoutine,
+    dayMovements,
   } = useWorkout();
 
   const [pendingMode, setPendingMode] = useState(null);
@@ -143,9 +143,9 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
   const mode = program?.mode === "schedule" ? "schedule" : "plan";
   const cursorIndex = program?.cursor?.dayIndex ?? 0;
 
+  // A day owns its movements now; it no longer borrows a routine's.
   const movementCount = (day) => {
-    const routine = getRoutine(day.routineId);
-    const n = routine?.movements?.length || 0;
+    const n = dayMovements(day).length;
     return `${n} movement${n === 1 ? "" : "s"}`;
   };
 
@@ -214,7 +214,6 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
             movementCount={movementCount}
             lastDoneFor={lastDoneFor}
             lastSessionDate={lastSessionDate}
-            getRoutine={getRoutine}
             onOpenRoutine={onOpenRoutine}
           />
         ) : (
@@ -223,7 +222,6 @@ export default function ProgramPage({ onEditPlan, onOpenRoutine, onOpenBlocks })
             days={days}
             sessions={sessions}
             movementCount={movementCount}
-            getRoutine={getRoutine}
           />
         )}
 
@@ -281,7 +279,6 @@ function PlanBody({
   movementCount,
   lastDoneFor,
   lastSessionDate,
-  getRoutine,
   onOpenRoutine,
 }) {
   const waiting = waitingLabel(lastSessionDate);
@@ -309,24 +306,29 @@ function PlanBody({
 
       {days.map((day, index) => {
         const done = lastDoneFor(day.id);
-        const routine = getRoutine(day.routineId);
         const skipped = skips.filter((skip) => skip.dayId === day.id).length;
 
         if (index === cursorIndex) {
           return (
-            <CursorBlock
+            // Tappable like every other day — this is where you edit the
+            // workout that is up next.
+            <button
               key={day.id}
-              title={`Day ${index + 1} · ${day.name}`}
-              badge="Next"
-              // The migration falls back to "N movements" as a focus when the
-              // bank has no muscle groups, so don't print it twice.
-              sub={
-                routine?.focus && routine.focus !== movementCount(day)
-                  ? `${movementCount(day)} · ${routine.focus}`
-                  : movementCount(day)
-              }
-              waiting={waiting}
-            />
+              type="button"
+              className="text-left w-full"
+              onClick={() => onOpenRoutine?.(day)}
+            >
+              <CursorBlock
+                title={`Day ${index + 1} · ${day.name}`}
+                badge="Next"
+                sub={
+                  day.focus && day.focus !== movementCount(day)
+                    ? `${movementCount(day)} · ${day.focus}`
+                    : movementCount(day)
+                }
+                waiting={waiting}
+              />
+            </button>
           );
         }
 
@@ -361,7 +363,7 @@ function PlanBody({
 
 // ------------------------------------------------------------------ 8P
 
-function ScheduleBody({ program, days, sessions, movementCount, getRoutine }) {
+function ScheduleBody({ program, days, sessions, movementCount }) {
   const today = dateKey();
   const todayKey = WEEKDAY_KEYS[new Date().getDay()];
   const thisWeek = weekKey();

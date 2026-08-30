@@ -19,7 +19,7 @@ const newId = (prefix) =>
  * A 46px stepper tile inside a 48px row, so the touch target clears 44px even
  * though the tile reads as 46. Tap either half to step; tap the value to type.
  */
-function StepperTile({ label, value, onChange, step = 1, min = 0, readOnly }) {
+export function StepperTile({ label, value, onChange, step = 1, min = 0, readOnly }) {
   const [editing, setEditing] = useState(false);
   const holdRef = useRef(null);
 
@@ -125,7 +125,7 @@ function StepperTile({ label, value, onChange, step = 1, min = 0, readOnly }) {
 }
 
 /** Search, then everything grouped by body part, then "Create movement". */
-function LibrarySheet({ onPick, onClose }) {
+export function LibrarySheet({ onPick, onClose }) {
   const { exerciseBank, addBankExercise } = useWorkout();
   const [query, setQuery] = useState("");
 

@@ -19,7 +19,11 @@ import {
   migrateToPlan,
   nextDay,
   orderedDays,
+  dayAsWorkout,
+  dayMovements,
+  detachDaysFromRoutines,
   reconcileCursor,
+  seedDayFromRoutine,
   sessionDayId,
   skipDay,
   toPlanMode,
@@ -428,6 +432,29 @@ export function WorkoutProvider({ children }) {
     setExerciseDetails,
     setPrograms,
   ]);
+
+  /*
+   * Plan days stop borrowing routines and take their own movement list.
+   *
+   * A day was never meant to BE a routine — two days pointing at one meant
+   * editing Day 3 rewrote Day 5, and every day forced a shelf entry to exist.
+   * Copied once; the routines themselves are left on the shelf untouched.
+   */
+  const detachRef = useRef(false);
+  useEffect(() => {
+    if (!isReady || detachRef.current) return;
+    if (program?.version !== PROGRAM_VERSION) return;
+    const days = orderedDays(program);
+    if (!days.length || days.every((day) => Array.isArray(day.movements))) return;
+    detachRef.current = true;
+    setPrograms((prev) => ({
+      ...prev,
+      [activeProgramId]: {
+        ...prev[activeProgramId],
+        days: detachDaysFromRoutines(days, routines),
+      },
+    }));
+  }, [isReady, program, activeProgramId, routines, setPrograms]);
 
   /*
    * An 'onComplete' group rolls over on the next launch after it was filled,
@@ -878,7 +905,7 @@ export function WorkoutProvider({ children }) {
     const startPlanDay = (dayId, { isSwap = false } = {}) => {
       const cursor = currentCursor(program);
       const day = orderedDays(program).find((d) => d.id === dayId);
-      const routine = day ? routines?.[day.routineId] : null;
+      const routine = day ? dayAsWorkout(day, routines) : null;
       const today = dateKey();
 
       // Resume an unfinished session for this day in this round rather than
@@ -1213,7 +1240,8 @@ export function WorkoutProvider({ children }) {
     const getRoutine = (routineId) => routines?.[routineId] || null;
 
     /** The routine behind the day the cursor is on. */
-    const nextRoutine = upNext ? getRoutine(upNext.day.routineId) : null;
+    // The day's own workout, not a shared routine.
+    const nextRoutine = upNext ? dayAsWorkout(upNext.day, routines) : null;
 
     /** Most recent logged session date, for "waiting N days" (display only). */
     const lastSessionDate =
@@ -1288,22 +1316,17 @@ export function WorkoutProvider({ children }) {
      * day — a day with no routine has nothing to train — and the cursor is
      * reconciled so the day that was up next stays up next.
      */
+    /**
+     * Routines are deleted for real. The plan is untouched: a day that was
+     * seeded from this routine kept its own copy of the movements, so it
+     * carries on working.
+     */
     const deleteRoutine = (routineId) => {
       setRoutines((prev) => {
         const next = { ...prev };
         delete next[routineId];
         return next;
       });
-      const anchorId = nextDay(program)?.day?.id;
-      const remaining = orderedDays(program)
-        .filter((day) => day.routineId !== routineId)
-        .map((day, order) => ({ ...day, order }));
-      if (remaining.length !== orderedDays(program).length) {
-        writeProgram({
-          days: remaining,
-          cursor: reconcileCursor(remaining, program?.cursor, anchorId),
-        });
-      }
     };
 
     // ---- targets ----
@@ -1436,6 +1459,77 @@ export function WorkoutProvider({ children }) {
       });
       setRoutines((prev) => ({ ...prev, ...cloned }));
       return ids;
+    };
+
+    const bankMovement = (movementId, order) => {
+      const bank = exerciseBank?.[movementId] || {};
+      return {
+        movementId,
+        order,
+        sets: Math.max(1, parseInt(bank.sets, 10) || 3),
+        reps: bank.reps || "",
+        targetLoadKg: parseFloat(bank.weight) || 0,
+      };
+    };
+
+    /** Edits one day of the plan in place. The routines shelf is untouched. */
+    const updatePlanDay = (dayId, patch) =>
+      writeProgram({
+        days: orderedDays(program).map((day) =>
+          day.id === dayId ? { ...day, ...patch } : day
+        ),
+      });
+
+    /** Copies a routine's movements onto a day. Editing the day after this
+     *  never writes back to the routine. */
+    const seedPlanDay = (dayId, routine) =>
+      writeProgram({
+        days: orderedDays(program).map((day) =>
+          day.id === dayId ? seedDayFromRoutine(day, routine) : day
+        ),
+      });
+
+    /**
+     * Sets how many workouts the plan holds. Growing adds empty days for you
+     * to fill; shrinking drops from the end, and the cursor is reconciled so
+     * the day that was up next stays up next.
+     */
+    const setPlanLength = (count) => {
+      const days = orderedDays(program);
+      const anchorId = nextDay(program)?.day?.id;
+      let next = days;
+      if (count > days.length) {
+        next = [
+          ...days,
+          ...Array.from({ length: count - days.length }, (_, i) => ({
+            id: newLocalId("d"),
+            order: days.length + i,
+            name: `Workout ${days.length + i + 1}`,
+            movements: [],
+          })),
+        ];
+      } else if (count < days.length) {
+        next = days.slice(0, count);
+      }
+      next = next.map((day, order) => ({ ...day, order }));
+      writeProgram({
+        days: next,
+        cursor: reconcileCursor(next, program?.cursor, anchorId),
+      });
+    };
+
+    /** Puts a copy of a plan day on the shelf, so other plans can use it. */
+    const saveDayAsRoutine = (dayId, name) => {
+      const day = orderedDays(program).find((d) => d.id === dayId);
+      if (!day) return null;
+      const id = newLocalId("r");
+      saveRoutine({
+        id,
+        name: (name || day.name || "Routine").trim(),
+        focus: day.focus || "",
+        movements: dayMovements(day, routines).map((m, order) => ({ ...m, order })),
+      });
+      return id;
     };
 
     /** A routine built from a picked list of movements, with bank defaults. */
@@ -1629,6 +1723,12 @@ export function WorkoutProvider({ children }) {
       skipCurrentDay,
       startNextRound,
       setPlanDays,
+      setPlanLength,
+      updatePlanDay,
+      seedPlanDay,
+      saveDayAsRoutine,
+      dayMovements: (day) => dayMovements(day, routines),
+      bankMovement,
       setProgramMode,
       setProgram,
       dayIdForSession: (session) => sessionDayId(session, program),

@@ -3,7 +3,6 @@ import { Settings } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
 import ArtLayer from "../components/ArtLayer";
 import DayStrip from "../components/DayStrip";
-import GlobalTracker from "../components/GlobalTracker";
 import Ring from "../components/Ring";
 import { artSeed } from "../lib/art";
 import { waitingLabel } from "../lib/plan";
@@ -236,7 +235,6 @@ export default function TodayPage({
           Add a body measurement
         </button>
 
-        <GlobalTracker />
       </div>
     );
   }
@@ -367,7 +365,6 @@ export default function TodayPage({
           </span>
         )}
 
-        <GlobalTracker />
       </div>
 
       {swapping && (

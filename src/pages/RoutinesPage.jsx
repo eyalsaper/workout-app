@@ -155,6 +155,38 @@ export default function RoutinesPage({
 
   const filtersOn = muscles.length || equipment.length || duration;
 
+  /*
+   * Yours first, then the built-in workouts, then the ready-made programmes
+   * — one list, because at the point of choosing what to train the origin of
+   * a workout is not what you are sorting by.
+   */
+  const shelf = [
+    ...mine.map(({ routine, summary }) => ({
+      key: routine.id,
+      name: routine.name,
+      sub: (routine.movements || []).map((m) => m.movementId).join(" · "),
+      minutes: summary.minutes,
+      onRun: () => onRunRoutine(routine),
+      onDelete: () => setConfirmDelete(routine),
+    })),
+    ...premade.map((w) => ({
+      key: w.id,
+      name: w.name,
+      sub: w.exercises.join(" · "),
+      minutes: w.minutes,
+      onRun: () => onRunPremade(w),
+    })),
+    ...(filtersOn
+      ? []
+      : templates.map((t) => ({
+          key: t.id,
+          name: t.name,
+          sub: `${t.description} · ${t.days.length} workouts`,
+          minutes: null,
+          onRun: () => onRunTemplate(t),
+        }))),
+  ];
+
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-[12px]">
       <span className="screen-title flex-none">Workout</span>
@@ -162,7 +194,7 @@ export default function RoutinesPage({
 
       {/* Building is the reason you came here, so it leads. */}
       <button type="button" className="btn-primary flex-none" onClick={onBuild}>
-        Build a workout
+        Build your workout for today
       </button>
 
       <input
@@ -181,85 +213,64 @@ export default function RoutinesPage({
         }}
       />
 
-      <div className="flex flex-col gap-[6px] flex-none">
-        <Chips
-          options={DURATION_FILTERS}
-          isActive={(k) => duration === k}
-          onToggle={(k) => setDuration(duration === k ? null : k)}
-        />
-        <Chips
-          options={MUSCLE_FILTERS}
-          isActive={(k) => muscles.includes(k)}
-          onToggle={(k) => toggle(muscles, setMuscles, k)}
-        />
-        <Chips
-          options={EQUIPMENT_FILTERS}
-          isActive={(k) => equipment.includes(k)}
-          onToggle={(k) => toggle(equipment, setEquipment, k)}
-        />
+      {/* Three labelled groups, in the order you narrow by: what you want to
+          train, what you have to train it with, how long you have. */}
+      <div className="flex flex-col gap-[10px] flex-none">
+        <div className="flex flex-col gap-[6px]">
+          <span className="label" style={{ paddingLeft: 2 }}>
+            Muscles
+          </span>
+          <Chips
+            options={MUSCLE_FILTERS}
+            isActive={(k) => muscles.includes(k)}
+            onToggle={(k) => toggle(muscles, setMuscles, k)}
+          />
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          <span className="label" style={{ paddingLeft: 2 }}>
+            Equipment you have
+          </span>
+          <Chips
+            options={EQUIPMENT_FILTERS}
+            isActive={(k) => equipment.includes(k)}
+            onToggle={(k) => toggle(equipment, setEquipment, k)}
+          />
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          <span className="label" style={{ paddingLeft: 2 }}>
+            Time
+          </span>
+          <Chips
+            options={DURATION_FILTERS}
+            isActive={(k) => duration === k}
+            onToggle={(k) => setDuration(duration === k ? null : k)}
+          />
+        </div>
       </div>
 
+      {/* One list. Yours and the built-ins together, because when you are
+          looking for something to train you do not care which it is. */}
       <div className="flex flex-col gap-[8px] min-h-0" style={{ overflowY: "auto" }}>
         <span className="label" style={{ paddingLeft: 2 }}>
-          Yours
+          Pre-made
         </span>
-        {mine.length === 0 ? (
+
+        {shelf.length === 0 && (
           <span className="text-[13px]" style={{ color: "var(--color-dim)" }}>
             {filtersOn || query ? "Nothing matches." : "Nothing on the shelf yet."}
           </span>
-        ) : (
-          mine.map(({ routine, summary }) => (
-            <Row
-              key={routine.id}
-              name={routine.name}
-              // The migration falls back to "N movements" as a focus when the
-              // bank has no muscle groups, and summary.label already says
-              // that — so a fallback focus is dropped rather than repeated.
-              sub={
-                routine.focus && !/^\d+\s+movements?$/.test(routine.focus)
-                  ? `${routine.focus} · ${summary.movements} movements · ${summary.minutes} min`
-                  : summary.label
-              }
-              value={summary.movements}
-              onClick={() => onRunRoutine(routine)}
-              onDelete={() => setConfirmDelete(routine)}
-            />
-          ))
         )}
 
-        {premade.length > 0 && (
-          <>
-            <span className="label" style={{ paddingLeft: 2, paddingTop: 6 }}>
-              Ready-made workouts
-            </span>
-            {premade.map((w) => (
-              <Row
-                key={w.id}
-                name={w.name}
-                sub={w.blurb || `${w.exercises.length} movements`}
-                value={w.minutes}
-                onClick={() => onRunPremade(w)}
-              />
-            ))}
-          </>
-        )}
-
-        {templates.length > 0 && !filtersOn && (
-          <>
-            <span className="label" style={{ paddingLeft: 2, paddingTop: 6 }}>
-              Ready-made programmes
-            </span>
-            {templates.map((t) => (
-              <Row
-                key={t.id}
-                name={t.name}
-                sub={t.description}
-                value={t.days.length}
-                onClick={() => onRunTemplate(t)}
-              />
-            ))}
-          </>
-        )}
+        {shelf.map((item) => (
+          <Row
+            key={item.key}
+            name={item.name}
+            sub={item.sub}
+            value={item.minutes ? `~${item.minutes} min` : ""}
+            onClick={item.onRun}
+            onDelete={item.onDelete}
+          />
+        ))}
       </div>
 
       {confirmDelete && (
