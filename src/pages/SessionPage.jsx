@@ -470,7 +470,7 @@ export default function SessionPage({ sessionKey, onExit, onFinish, onOpenMoveme
                   onChange={(e) =>
                     updateSessionSet(sessionKey, activeName, index, { weight: e.target.value })
                   }
-                  aria-label="Weight in kilograms"
+                  aria-label={`Weight in ${weightUnit === "LBS" ? "pounds" : "kilograms"}`}
                   style={{
                     width: 62,
                     background: "transparent",
@@ -481,7 +481,9 @@ export default function SessionPage({ sessionKey, onExit, onFinish, onOpenMoveme
                     outline: "none",
                   }}
                 />
-                <span style={{ fontSize: 12, color: "var(--color-dim)" }}>kg</span>
+                <span style={{ fontSize: 12, color: "var(--color-dim)" }}>
+                  {weightUnit === "LBS" ? "lb" : "kg"}
+                </span>
                 <Tile onClick={() => bump("weight", -1)} label="Less weight">
                   −
                 </Tile>
@@ -499,7 +501,7 @@ export default function SessionPage({ sessionKey, onExit, onFinish, onOpenMoveme
                   onChange={(e) =>
                     updateSessionSet(sessionKey, activeName, index, { reps: e.target.value })
                   }
-                  aria-label="Reps"
+                  aria-label={repsUnit}
                   style={{
                     width: 34,
                     background: "transparent",

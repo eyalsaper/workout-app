@@ -174,6 +174,19 @@ export function activeSessionFixture() {
         "Core Workout": {
           sets: [pending(0, 0), pending(0, 0), pending(0, 0)],
         },
+        // Bodyweight, and a target the library states as an instruction.
+        "Pull-Up": {
+          sets: [
+            { weight: "", weightUnit: "Body Wt.", reps: "", repsUnit: "Reps", targetReps: "FF", done: false, at: null },
+            { weight: "", weightUnit: "Body Wt.", reps: "", repsUnit: "Reps", targetReps: "FF", done: false, at: null },
+          ],
+        },
+        // Bodyweight, and measured in time rather than reps.
+        "Side Plank": {
+          sets: [
+            { weight: "", weightUnit: "Body Wt.", reps: "", repsUnit: "Secs", targetReps: "30", done: false, at: null },
+          ],
+        },
         "Romanian Deadlift": {
           sets: [pending(87.5, 8), pending(87.5, 8), pending(87.5, 8)],
         },

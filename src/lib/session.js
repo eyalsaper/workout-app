@@ -68,7 +68,15 @@ export function prefillFor(sets, setIdx, fallback) {
     const prior = sets[i];
     if (prior?.done) return { weight: prior.weight, reps: prior.reps };
   }
-  return { weight: fallback?.weight ?? "", reps: fallback?.reps ?? "" };
+  /*
+   * A rep TARGET is not always a rep COUNT. The library states some as ranges
+   * ("8-12") and some as instructions ("FF" — to failure), and neither is a
+   * number you can log. Prefill only what is countable and leave the rest
+   * empty; the target still shows in the line under the movement's name.
+   */
+  const target = fallback?.reps;
+  const countable = /^\d+(\.\d+)?$/.test(String(target ?? "").trim());
+  return { weight: fallback?.weight ?? "", reps: countable ? target : "" };
 }
 
 /**

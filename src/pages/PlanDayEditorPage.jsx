@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import { StepperTile, LibrarySheet } from "./RoutineEditorPage";
+import { StepperTile, TextTile, LibrarySheet } from "./RoutineEditorPage";
 
 /*
  * Editing one workout of the plan.
@@ -157,18 +157,21 @@ export default function PlanDayEditorPage({ dayId, onBack }) {
                   min={1}
                   onChange={(v) => patch(index, "sets", v)}
                 />
-                <StepperTile
-                  label="Reps"
-                  value={Number(item.reps) || 0}
-                  min={1}
-                  onChange={(v) => patch(index, "reps", String(v))}
+                <TextTile
+                  label={exerciseBank?.[item.movementId]?.repsUnit || "Reps"}
+                  value={item.reps}
+                  placeholder="8-12"
+                  onChange={(v) => patch(index, "reps", v)}
                 />
-                <StepperTile
-                  label="Load"
-                  value={item.targetLoadKg}
-                  step={loadStep}
-                  onChange={(v) => patch(index, "targetLoadKg", v)}
-                />
+                {/* A bodyweight movement has no load to set. */}
+                {exerciseBank?.[item.movementId]?.weightUnit !== "Body Wt." && (
+                  <StepperTile
+                    label="Load"
+                    value={item.targetLoadKg}
+                    step={loadStep}
+                    onChange={(v) => patch(index, "targetLoadKg", v)}
+                  />
+                )}
               </div>
             </div>
           );

@@ -127,6 +127,22 @@ test("the first set falls back to the routine's target", () => {
   });
 });
 
+test("a rep RANGE or instruction is not prefilled — it is not a count", () => {
+  const sets = [pending("", "")];
+  // "8-12" and "FF" are targets, not numbers you can log.
+  assert.deepEqual(prefillFor(sets, 0, { weight: "0", reps: "8-12" }), {
+    weight: "0",
+    reps: "",
+  });
+  assert.deepEqual(prefillFor(sets, 0, { weight: "", reps: "FF" }), {
+    weight: "",
+    reps: "",
+  });
+  // A plain number still fills in.
+  assert.equal(prefillFor(sets, 0, { weight: "", reps: "5" }).reps, "5");
+  assert.equal(prefillFor(sets, 0, { weight: "", reps: "12.5" }).reps, "12.5");
+});
+
 test("prefill skips over a set that was never logged", () => {
   const sets = [done("100", "5"), pending("", ""), pending("", "")];
   assert.deepEqual(prefillFor(sets, 2, { weight: "0", reps: "0" }), {

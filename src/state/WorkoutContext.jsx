@@ -929,17 +929,36 @@ export function WorkoutProvider({ children }) {
         expandMovements(routine?.movements, routines).forEach((movement, order) => {
           const name = cleanName(movement.movementId);
           if (!name) return;
+          const bankData = exerciseBank?.[name];
           const count = Math.max(1, parseInt(movement.sets, 10) || 1);
-          const planned = Array.from({ length: count }, () => ({
-            weight: movement.targetLoadKg ? String(movement.targetLoadKg) : "",
-            weightUnit: "KG",
-            reps: "",
-            repsUnit: "Reps",
-            targetReps: movement.reps ?? "",
-            rpe: "",
-            done: false,
-            at: null,
-          }));
+          const planned = Array.from({ length: count }, (_, i) => {
+            /*
+             * Units come from the movement library, never from here.
+             *
+             * A bodyweight movement has no load to type and a held movement
+             * is measured in seconds or minutes — hardcoding "KG" and "Reps"
+             * asked for numbers that do not exist, and threw away rep targets
+             * the library states as ranges ("8-12") or as words ("FF").
+             */
+            const fromBank = setDataFor(bankData, i);
+            const isBodyweight = fromBank.weightUnit === "Body Wt.";
+            return {
+              weight: isBodyweight
+                ? ""
+                : movement.targetLoadKg
+                ? String(movement.targetLoadKg)
+                : fromBank.weight ?? "",
+              weightUnit: fromBank.weightUnit || "KG",
+              reps: "",
+              repsUnit: fromBank.repsUnit || "Reps",
+              // The routine's own target wins when it has one; otherwise the
+              // library's, which is where "8-12" and "FF" live.
+              targetReps: movement.reps || fromBank.reps || "",
+              rpe: "",
+              done: false,
+              at: null,
+            };
+          });
           // `order` is stored because Firebase returns object keys sorted
           // alphabetically — without it the session runs in the wrong order.
           if (entries[name]) entries[name].sets.push(...planned);

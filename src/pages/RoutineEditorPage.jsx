@@ -124,6 +124,53 @@ export function StepperTile({ label, value, onChange, step = 1, min = 0, readOnl
   );
 }
 
+/**
+ * A text tile, same shape as a stepper but holding words.
+ *
+ * Rep targets are not always numbers: the library states them as ranges
+ * ("8-12") and sometimes as instructions ("FF" — to failure). A numeric
+ * stepper silently turned both into 0 the moment the editor opened.
+ */
+export function TextTile({ label, value, onChange, readOnly, placeholder }) {
+  return (
+    <div className="flex-1" style={{ height: 48, display: "flex", alignItems: "center" }}>
+      <div
+        className="w-full flex flex-col items-center justify-center"
+        style={{
+          height: 46,
+          borderRadius: 12,
+          background: "var(--color-card-hi)",
+          border: "1px solid #24272d",
+          gap: 1,
+        }}
+      >
+        <input
+          value={value ?? ""}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: "76%",
+            textAlign: "center",
+            background: "transparent",
+            outline: "none",
+            fontFamily: "var(--font-display)",
+            fontSize: 15,
+            fontWeight: 700,
+            color: "var(--color-brass-text)",
+          }}
+        />
+        <span
+          className="uppercase"
+          style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--color-dim)" }}
+        >
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Search, then everything grouped by body part, then "Create movement". */
 export function LibrarySheet({ onPick, onClose }) {
   const { exerciseBank, addBankExercise } = useWorkout();
