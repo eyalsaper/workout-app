@@ -38,19 +38,40 @@ import { listUserArt } from "./lib/userArt";
 // theme; the token block in index.css is the whole story.
 
 /**
- * Reads public/art/library.json and the user's own images once, then keeps the
- * picker's view of their preferences current. Nothing waits on this — no
- * layout depends on art, so screens render immediately with plain surfaces.
+ * Reads public/art/library.json and the user's own images once, at APP boot
+ * rather than inside the shell — the sign-in screen draws art too, and it
+ * renders long before any of the shell's state exists.
+ *
+ * Returns a counter so a mount can re-render when the library lands. Nothing
+ * waits on it: no layout depends on art, so screens paint immediately with
+ * their plain surfaces and the image appears when it appears.
  */
-function useArtLibrary(settings) {
+function useArtBoot() {
+  const [loaded, setLoaded] = useState(0);
+
   useEffect(() => {
-    loadArtLibrary().then(() =>
-      listUserArt()
-        .then((userImages) => setArtPreferences({ userImages }))
-        .catch(() => {})
-    );
+    let alive = true;
+    loadArtLibrary()
+      .then(() => {
+        if (alive) setLoaded((n) => n + 1);
+        return listUserArt();
+      })
+      .then((userImages) => {
+        if (!alive || !userImages) return;
+        setArtPreferences({ userImages });
+        setLoaded((n) => n + 1);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
+  return loaded;
+}
+
+/** Keeps the picker's view of the account's art preferences current. */
+function useArtPreferences(settings) {
   useEffect(() => {
     setArtPreferences({
       characterArt: settings.characterArt !== false,
@@ -114,7 +135,7 @@ function Shell() {
     saveBuiltRoutine,
   } = useWorkout();
 
-  useArtLibrary(settings);
+  useArtPreferences(settings);
 
   const [activePage, setActivePage] = useState("workout");
   const [workoutSegment, setWorkoutSegment] = useState("today");
@@ -492,6 +513,9 @@ function Gate() {
 }
 
 export default function App() {
+  // Loaded here so the sign-in screen has art too, not only the signed-in app.
+  useArtBoot();
+
   return (
     <AuthProvider>
       <Gate />
