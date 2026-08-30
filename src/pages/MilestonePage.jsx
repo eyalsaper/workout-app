@@ -1,143 +1,114 @@
-import React, { useMemo } from "react";
+import React, { useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import {
-  RANKS,
-  getStanding,
-  getChapterInfo,
-  buildLedger,
-  bodyweightAt,
-  nextBodyweightMultipleGoal,
-} from "../lib/achievements";
+import ArtLayer from "../components/ArtLayer";
+import { InsetBlock, Kicker, PosterButton, PosterRow } from "../components/poster";
+import { artSeed } from "../lib/art";
+import { formatTonnage } from "../lib/training";
+import { chapterDateRange, getChapterInfo } from "../lib/achievements";
 
-function monthYear(day) {
+/*
+ * 8M · Chapter summary — the long arc.
+ *
+ * A chapter is ~12 weeks and the user closes it by hand. Auto-computed stats
+ * plus ONE written note: no prompts, no templates, no questions — an empty
+ * field and the user's own words.
+ */
+
+const HERO = 330;
+
+function longDate(day) {
+  if (!day) return "";
   const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "long" });
 }
 
-export default function MilestonePage({ milestone, onKeep, onViewSummary }) {
-  const { sessions, settings, bodyweightLog, bodyweightKg } = useWorkout();
-  const { liftName, rankIndex, date } = milestone;
-  const sex = settings.sex;
+export default function MilestonePage({ onClose }) {
+  const { sessions, chapterSummaries, ensureChapterSummary } = useWorkout();
 
-  const standing = useMemo(
-    () => getStanding(liftName, sessions, bodyweightKg, sex),
-    [liftName, sessions, bodyweightKg, sex]
+  const chapter = getChapterInfo(sessions);
+  const number = chapter?.number ?? 1;
+  const range = chapterDateRange(sessions, number);
+
+  const inChapter = Object.values(sessions || {}).filter(
+    (s) => s?.finishedAt && s?.date && range && s.date >= range.from && s.date < range.to
   );
-  const chapter = useMemo(() => getChapterInfo(sessions), [sessions]);
-  const ledger = useMemo(
-    () => buildLedger(sessions, bodyweightLog, bodyweightKg, sex),
-    [sessions, bodyweightLog, bodyweightKg, sex]
-  );
+  const tonnage = inChapter.reduce((sum, s) => sum + (s.tonnageKg || 0), 0);
+  const bests = inChapter.reduce((sum, s) => sum + (s.newBests?.length || 0), 0);
 
-  if (!standing) return null;
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState(chapterSummaries?.[number] || "");
 
-  const nowBodyweight = bodyweightAt(date, bodyweightLog, bodyweightKg);
-  const previousCrossing = ledger.find(
-    (e) => e.kind === "rank" && e.liftName === liftName && e.rankIndex === rankIndex - 1
-  );
-  const wasLabel = rankIndex > 0 ? RANKS[rankIndex - 1] : "Getting started";
-  const wasDate = previousCrossing?.date || null;
-  const wasBodyweight = wasDate ? bodyweightAt(wasDate, bodyweightLog, bodyweightKg) : null;
-
-  const bwGoal = nextBodyweightMultipleGoal(liftName, standing.ratio, nowBodyweight);
-
-  const nextItems = [
-    standing.nextRank && { label: `${liftName} ${standing.nextRank}`, value: `${standing.kgToNext} kg away` },
-    chapter && chapter.weeksLeft > 0 && {
-      label: `Chapter ${chapter.number} closes`,
-      value: `${chapter.weeksLeft} week${chapter.weeksLeft === 1 ? "" : "s"}`,
-    },
-    bwGoal && { label: `${liftName} × ${bwGoal.multiple} bodyweight`, value: `${bwGoal.kgAway} kg away` },
-  ].filter(Boolean);
+  const saveNote = () => {
+    ensureChapterSummary(number, note);
+    setEditing(false);
+  };
 
   return (
     <div
-      className="surface-inverse fixed inset-0 z-40 overflow-y-auto animate-in fade-in"
-      style={{ animationDuration: "260ms", "--enter-y": "6px" }}
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto" }}
     >
-      <div className="max-w-lg mx-auto px-6 pt-16 pb-10">
-        <div className="text-xs font-medium uppercase tracking-[0.16em]" style={{ color: "var(--inv-eyebrow)" }}>
-          Written into the book
+      <div
+        className="relative flex-none flex flex-col justify-end"
+        style={{ height: HERO, padding: "0 24px 22px" }}
+      >
+        <ArtLayer mood="triumph" seedKey={artSeed.chapter(number)} scrim="poster" />
+        <div className="relative flex flex-col gap-[8px]">
+          <Kicker>
+            Chapter {number} · 12 weeks
+          </Kicker>
+          <span className="poster-title">
+            Chapter
+            <br />
+            closed
+          </span>
+          <span style={{ fontSize: 13, color: "var(--color-muted-poster)" }}>
+            {range ? `${longDate(range.from)} — ${longDate(range.to)}` : "not started"}
+          </span>
         </div>
-        <div
-          className="mt-5 text-5xl leading-[1.05]"
-          style={{ fontFamily: "var(--font-heading)", color: "var(--inv-title)" }}
-        >
-          {liftName},<br />
-          {RANKS[rankIndex]}.
-        </div>
-        <p className="mt-5 text-base leading-relaxed aside" style={{ color: "var(--inv-aside)" }}>
-          {Math.round(standing.e1rmKg)} kg estimated, at {Math.round(nowBodyweight)} kg bodyweight — progress
-          that's yours to keep.
-        </p>
+      </div>
 
-        <div
-          className="mt-8 flex justify-between py-5"
-          style={{ borderTop: "1px solid var(--inv-btn-secondary-border)", borderBottom: "1px solid var(--inv-btn-secondary-border)" }}
-        >
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--inv-tile-label)" }}>
-              Was
-            </div>
-            <div className="mt-2 text-xl" style={{ fontFamily: "var(--font-heading)", color: "var(--inv-aside)" }}>
-              {wasLabel}
-            </div>
-            {wasDate && (
-              <div className="mt-1 text-xs" style={{ color: "var(--inv-tile-label)" }}>
-                {monthYear(wasDate)} · {Math.round(wasBodyweight)} kg
-              </div>
+      <div className="flex flex-col flex-1" style={{ padding: "0 24px 16px" }}>
+        <PosterRow label="Sessions" value={inChapter.length} brassRule />
+        <PosterRow label="Lifted" value={formatTonnage(tonnage)} />
+        <PosterRow label="New bests" value={`${bests} lift${bests === 1 ? "" : "s"}`} />
+
+        <InsetBlock style={{ marginTop: 10 }}>
+          <div className="flex flex-col gap-[8px]">
+            <span className="label">Your note</span>
+            {editing ? (
+              <textarea
+                autoFocus
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={5}
+                style={{
+                  background: "transparent",
+                  outline: "none",
+                  resize: "none",
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "var(--color-text)",
+                  fontFamily: "var(--font-body)",
+                }}
+              />
+            ) : (
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--color-text)" }}>
+                {note || "—"}
+              </p>
             )}
+            <button
+              type="button"
+              className="link-teal text-left"
+              onClick={editing ? saveNote : () => setEditing(true)}
+            >
+              {editing ? "Save note" : "Edit note"}
+            </button>
           </div>
-          <div className="text-right">
-            <div className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--inv-tile-label)" }}>
-              Now
-            </div>
-            <div className="mt-2 text-xl" style={{ fontFamily: "var(--font-heading)", color: "var(--inv-title)" }}>
-              {RANKS[rankIndex]}
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--inv-eyebrow)" }}>
-              {monthYear(date)} · {Math.round(nowBodyweight)} kg
-            </div>
-          </div>
-        </div>
+        </InsetBlock>
 
-        {nextItems.length > 0 && (
-          <div className="mt-7">
-            <div className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--inv-tile-label)" }}>
-              Next in the book
-            </div>
-            <div className="mt-3 space-y-2.5">
-              {nextItems.map((item) => (
-                <div key={item.label} className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm" style={{ color: "var(--inv-aside)" }}>
-                    {item.label}
-                  </span>
-                  <span className="text-sm font-medium" style={{ color: "var(--inv-title)" }}>
-                    {item.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-9 space-y-2.5">
-          <button
-            type="button"
-            onClick={onKeep}
-            className="w-full py-4 rounded-card font-medium text-sm"
-            style={{ background: "var(--inv-btn-primary-bg)", color: "var(--inv-btn-primary-label)" }}
-          >
-            Keep it — back to Workout
-          </button>
-          <button
-            type="button"
-            onClick={onViewSummary}
-            className="w-full py-3.5 rounded-card font-medium text-sm"
-            style={{ border: "1px solid var(--inv-btn-secondary-border)", color: "var(--inv-btn-secondary-label)", background: "transparent" }}
-          >
-            See this session's summary
-          </button>
+        <div style={{ marginTop: "auto", paddingTop: 20 }}>
+          <PosterButton onClick={onClose}>Start chapter {number + 1}</PosterButton>
         </div>
       </div>
     </div>

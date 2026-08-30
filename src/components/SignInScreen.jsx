@@ -1,6 +1,41 @@
 import React, { useState } from "react";
-import { Dumbbell, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "../state/AuthContext";
+import ArtLayer from "./ArtLayer";
+import { Kicker } from "./poster";
+import { artSeed } from "../lib/art";
+
+/*
+ * The sign-in gate, styled as a poster screen so it belongs to 8O rather than
+ * standing outside the app. A `welcome` draw, seeded once and never re-rolled.
+ */
+
+function Field({ id, label, type, autoComplete, value, onChange, onEnter }) {
+  return (
+    <div className="flex flex-col gap-[6px]">
+      <label htmlFor={id} className="label">
+        {label}
+      </label>
+      <input
+        id={id}
+        type={type}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onEnter()}
+        style={{
+          height: 52,
+          borderRadius: "var(--radius-control)",
+          background: "var(--color-card-hi)",
+          border: "1px solid #24272d",
+          padding: "0 14px",
+          color: "var(--color-text)",
+          outline: "none",
+        }}
+      />
+    </div>
+  );
+}
 
 export default function SignInScreen() {
   const { signIn, signUp, readableError } = useAuth();
@@ -29,64 +64,60 @@ export default function SignInScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-surface-page flex items-center justify-center p-4">
-      <div className="card-hero p-8 w-full max-w-sm">
-        <div className="mb-1">
-          <div className="stencil mb-2 flex items-center gap-2">
-            <Dumbbell className="w-3.5 h-3.5" /> Training log
+    <div
+      style={{
+        height: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--color-poster)",
+        color: "var(--color-text)",
+        overflowY: "auto",
+      }}
+    >
+      <div className="mx-auto w-full max-w-lg flex flex-col flex-1 min-h-0">
+        <div
+          className="relative flex-none flex flex-col justify-end"
+          style={{ height: 300, padding: "0 24px 22px" }}
+        >
+          <ArtLayer mood="welcome" seedKey={artSeed.firstRun()} scrim="poster" />
+          <div className="relative flex flex-col gap-[8px]">
+            <Kicker>Iron Log</Kicker>
+            <span className="poster-title" data-lines="2">
+              Pick up
+              <br />
+              the bar
+            </span>
           </div>
-          <h1 className="text-5xl leading-[0.95]">
-            Iron
-            <br />
-            <span className="text-accent">Log</span>
-          </h1>
-          <div className="border-b border-border my-4" aria-hidden="true" />
         </div>
-        <p className="text-ink-muted text-sm mb-6">
-          {isCreating
-            ? "Create the account your training syncs to."
-            : "Sign in to load your training on this device."}
-        </p>
 
-        <div className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="stencil block mb-1.5"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              className="w-full p-3 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
-            />
-          </div>
+        <div className="flex flex-col gap-4" style={{ padding: "0 24px 24px" }}>
+          <p style={{ fontSize: 13, color: "var(--color-muted-poster)" }}>
+            {isCreating
+              ? "Create the account your training syncs to."
+              : "Sign in to load your training on this device."}
+          </p>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="stencil block mb-1.5"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete={isCreating ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              className="w-full p-3 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
-            />
-          </div>
+          <Field
+            id="email"
+            label="Email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={setEmail}
+            onEnter={submit}
+          />
+          <Field
+            id="password"
+            label="Password"
+            type="password"
+            autoComplete={isCreating ? "new-password" : "current-password"}
+            value={password}
+            onChange={setPassword}
+            onEnter={submit}
+          />
 
           {error && (
-            <p className="text-sm text-negative bg-negative/10 border border-negative/40 rounded-card p-3">
+            <p style={{ fontSize: 13, color: "var(--color-text)" }} role="alert">
               {error}
             </p>
           )}
@@ -95,7 +126,8 @@ export default function SignInScreen() {
             type="button"
             onClick={submit}
             disabled={isBusy}
-            className="btn-ink w-full py-3 disabled:opacity-60"
+            className="btn-primary btn-poster w-full"
+            style={{ gap: 8 }}
           >
             {isBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             {isCreating ? "Create account" : "Sign in"}
@@ -107,11 +139,9 @@ export default function SignInScreen() {
               setIsCreating((v) => !v);
               setError("");
             }}
-            className="w-full text-sm text-ink-muted hover:text-accent font-medium"
+            className="link-teal"
           >
-            {isCreating
-              ? "I already have an account"
-              : "First time here? Create an account"}
+            {isCreating ? "I already have an account" : "First time here? Create an account"}
           </button>
         </div>
       </div>

@@ -9,7 +9,9 @@ import {
 } from "firebase/auth";
 import { auth } from "../firebase";
 
-const AuthContext = createContext(null);
+// Exported so the dev preview harness can mount a screen without a real
+// Firebase session. Nothing in the app consumes it directly — use useAuth().
+export const AuthContext = createContext(null);
 
 // Firebase error codes are not something to show a person mid-workout.
 const MESSAGES = { "auth/invalid-email": "That doesn't look like an email address.", "auth/invalid-credential": "Wrong email or password.", "auth/wrong-password": "Wrong email or password.", "auth/user-not-found": "No account with that email yet.", "auth/email-already-in-use": "That email already has an account. Sign in instead.", "auth/weak-password": "Passwords need at least 6 characters.", "auth/too-many-requests": "Too many attempts. Wait a minute and try again.", "auth/network-request-failed": "No connection. Check your signal and try again.", "auth/operation-not-allowed": "Email sign-in isn't switched on yet. Enable it in Firebase Console → Authentication → Sign-in method.",

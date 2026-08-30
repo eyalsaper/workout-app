@@ -27,6 +27,34 @@ export const STRENGTH_STANDARDS_BY_SEX = {
   },
 };
 
+/*
+ * The standards tables are keyed by the classic lift name, but the movement
+ * library calls the squat "Back Squat" and older accounts have a starter
+ * entry called plain "Squat". Both are the same lift for ranking purposes, so
+ * a table entry names every movement that counts towards it.
+ *
+ * The thresholds themselves are untouched — only which movement names feed
+ * them.
+ */
+export const LIFT_ALIASES = {
+  Squat: ["Squat", "Back Squat", "Box Squat"],
+  "Bench Press": ["Bench Press"],
+  Deadlift: ["Deadlift", "Sumo Deadlift", "Trap Bar Deadlift"],
+  "Overhead Press": ["Overhead Press"],
+};
+
+/** Movement names that count towards one standards table. */
+export function movementsForLift(liftName) {
+  return LIFT_ALIASES[liftName] || [liftName];
+}
+
+/** The standards table a logged movement contributes to, if any. */
+export function standardsKeyFor(movementName) {
+  return (
+    Object.keys(LIFT_ALIASES).find((key) => LIFT_ALIASES[key].includes(movementName)) || null
+  );
+}
+
 function standardsTable(liftName, sex) {
   return STRENGTH_STANDARDS_BY_SEX[sex]?.[liftName] || null;
 }
@@ -74,12 +102,15 @@ export function getStanding(liftName, sessions, bodyweightKg, sex) {
   const table = standardsTable(liftName, sex);
   if (!table || !bodyweightKg) return null;
 
+  const names = movementsForLift(liftName);
   let bestE1rm = 0;
   Object.values(sessions || {}).forEach((s) => {
-    (s?.entries?.[liftName]?.sets || []).forEach((set) => {
-      if (!set || !set.done) return;
-      const value = e1rm(toKg(set.weight, set.weightUnit, bodyweightKg), set.reps);
-      if (value > bestE1rm) bestE1rm = value;
+    names.forEach((name) => {
+      (s?.entries?.[name]?.sets || []).forEach((set) => {
+        if (!set || !set.done) return;
+        const value = e1rm(toKg(set.weight, set.weightUnit, bodyweightKg), set.reps);
+        if (value > bestE1rm) bestE1rm = value;
+      });
     });
   });
   if (bestE1rm <= 0) return null;
@@ -245,7 +276,8 @@ export function buildLedger(sessions, bodyweightLog, fallbackBodyweightKg, sex) 
       }
       bestE1rmByLift[name] = Math.max(priorBest, sessionBest.value);
 
-      const table = standardsTable(name, sex);
+      const standardsKey = standardsKeyFor(name);
+      const table = standardsKey ? standardsTable(standardsKey, sex) : null;
       if (!table || !bodyweightKg) return;
 
       const ratio = bestE1rmByLift[name] / bodyweightKg;
@@ -266,10 +298,10 @@ export function buildLedger(sessions, bodyweightLog, fallbackBodyweightKg, sex) 
       }
       bestRatioByStandard[name] = Math.max(priorRatio, ratio);
 
-      const verb = LIFT_VERBS[name];
+      const verb = LIFT_VERBS[standardsKey];
       if (verb) {
         BODYWEIGHT_MULTIPLES.forEach((mult) => {
-          const key = `${name}_${mult}`;
+          const key = `${standardsKey}_${mult}`;
           if (!crossedMultiples[key] && ratio >= mult) {
             crossedMultiples[key] = true;
             entries.push({

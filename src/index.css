@@ -1,113 +1,122 @@
 @import "tailwindcss";
 
 /*
- * Iron Log — Paper. One fixed palette (no theme switch): warm off-white
- * paper, clay accent, sage for "done". Values are the exact handoff-spec
- * tokens from the Paper design doc (section 2e), not approximations.
+ * Iron Log — dark. One theme, no switch, no [data-theme] anywhere. Paper and
+ * Night are gone, not themed away. Values are the handoff tokens from
+ * IRON-LOG-BUILD-SPEC §5.1 verbatim, not approximations.
+ *
+ * Only two colours carry meaning: brass marks the current thing and the
+ * primary action, teal marks done and positive deltas. Nothing else in the
+ * app is coloured — a failed set is not red, it is just not logged.
  */
 @theme {
-  --color-surface-page: #f4f0e8;
-  --color-surface: #fdfaf4;
-  --color-surface-inset: #f3f0e6;
-  --color-surface-wash: #ece7dc;
+  /* surfaces — card screens */
+  --color-page: #101114;
+  --color-card: #191b1f;
+  --color-card-hi: #17191d;
+  --color-hero-a: #22262e;
+  --color-hero-b: #15171b;
 
-  --color-accent: #b0543f;
-  --color-accent-hot: #c2604a;
-  --color-accent-ink: #fdf6ee;
+  /* surfaces — poster screens */
+  --color-poster: #0e0f12;
+  --color-poster-card: #16181d;
 
-  --color-positive-bg: #cdd6c4;
-  --color-positive-ink: #4f5a48;
-  --color-positive-ink-strong: #3c4437;
-  --color-positive-delta: #7f9068;
+  /* lines */
+  --color-border: #26292f;
+  --color-border-hi: #2c313a;
+  --color-line: #1e2127;
+  --color-rule: #23252b;
+  --color-track: #2a2e35;
+  --color-track-next: #3a3f48;
 
-  --color-ink: #2b2620;
-  --color-ink-hot: #453d33;
-  --color-ink-soft: #4a4238;
-  --color-ink-mid: #6b6152;
-  --color-ink-muted: #8c8375;
-  --color-ink-faint: #a39a8a;
+  /* brass — the current thing and the primary action */
+  --color-brass: #d9b063;
+  --color-brass-text: #e0bb78;
+  --color-brass-grad-a: #e8ca8b;
+  --color-brass-grad-b: #b8893c;
+  --color-on-brass: #16130d;
 
-  --color-border: #e6dfd2;
-  --color-border-page: #ddd6c8;
-  --color-border-control: #e0d9cb;
+  /* teal — done, and positive deltas only */
+  --color-teal: #7cc0d4;
 
-  /* No separate error/warning color in the spec — clay carries both. */
-  --color-negative: #b0543f;
-  --color-warning: #b0543f;
+  /* ink */
+  --color-text: #f0ece5;
+  --color-text-strong: #f6f3ec;
+  --color-muted: #8d8b86;
+  --color-muted-poster: #9d9b96;
+  --color-dim: #6e6c68;
 
-  /* Card-inner hairline and dashed-ledger separator. Distinct from
-     border/border-control so Night can dial them independently. */
-  --color-hairline: #f0ebe0;
-  --color-separator: #e0d9cb;
+  --radius-hero: 26px;
+  --radius-card: 22px;
+  --radius-row: 18px;
+  --radius-control: 14px;
+  --radius-art: 20px;
+  --radius-button: 16px;
+  --radius-poster-button: 6px;
 
-  --radius-hero: 1.375rem;
-  --radius-card: 1rem;
-  --radius-inset: 0.8125rem;
-  --radius-pill: 1.25rem;
-
-  --font-heading: "Newsreader", Georgia, serif;
+  --font-display: "Sora", system-ui, sans-serif;
   --font-body: "Archivo", system-ui, sans-serif;
 }
 
-/*
- * Night — the same paper stock seen at night, not an inversion: warm
- * ink-brown surfaces, the same clay and sage, the accent lifted one step.
- * Overrides the exact @theme names above so every existing utility
- * (bg-surface, text-ink-muted, ...) follows automatically.
- */
 @layer base {
-  [data-theme="night"] {
-    --color-surface-page: #17140f;
-    --color-surface: #201c16;
-    --color-surface-inset: #272219;
-    --color-surface-wash: #2c261e;
+  :root {
+    /* Two gradients, no others. Not @theme tokens because Tailwind v4 would
+       try to generate colour utilities from them. */
+    --grad-brass: linear-gradient(135deg, #e8ca8b, #b8893c);
+    --grad-hero: linear-gradient(160deg, #22262e 0%, #15171b 70%);
 
-    --color-accent: #d1745a;
-    --color-accent-hot: #e08a6e;
-    --color-accent-ink: #17140f;
+    /* The inner highlight is what makes a hero surface read as lit. §5.1
+       says do not drop it, so it lives here rather than in a component. */
+    --shadow-hero: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 18px 40px rgba(0, 0, 0, 0.45);
 
-    --color-positive-bg: #3b4634;
-    --color-positive-ink: #c6d0bc;
-    --color-positive-ink-strong: #e2e8db;
-    --color-positive-delta: #9fb188;
-
-    --color-ink: #f0e9dc;
-    --color-ink-hot: #ffffff;
-    --color-ink-soft: #ddd5c6;
-    --color-ink-mid: #a79c8a;
-    --color-ink-muted: #8a8071;
-    --color-ink-faint: #6e6555;
-
-    --color-border: #2f2921;
-    --color-border-page: #3a332a;
-    --color-border-control: #3f382e;
-
-    --color-negative: #d1745a;
-    --color-warning: #d1745a;
-
-    --color-hairline: #2f2921;
-    --color-separator: #332c24;
+    /* Scrims are worst-case by necessity (§8.5): the draw is unknown, so no
+       scrim can be tuned to one image. Each is layered over a flat
+       rgba(0,0,0,0.18) wash — see .art-wash. */
+    --scrim-poster: linear-gradient(
+      180deg,
+      rgba(14, 15, 18, 0.5) 0%,
+      rgba(14, 15, 18, 0.1) 34%,
+      #0e0f12 93%
+    );
+    --scrim-hero-h: linear-gradient(
+      90deg,
+      #1b1f26 0%,
+      rgba(27, 31, 38, 0.72) 42%,
+      rgba(27, 31, 38, 0.25) 100%
+    );
+    --scrim-band: linear-gradient(
+      90deg,
+      rgba(20, 22, 26, 0.94) 0%,
+      rgba(20, 22, 26, 0.55) 58%,
+      rgba(20, 22, 26, 0.12) 100%
+    );
+    --scrim-rest: linear-gradient(
+      180deg,
+      rgba(14, 15, 18, 0.25) 0%,
+      rgba(14, 15, 18, 0.1) 30%,
+      #14161a 92%
+    );
 
     color-scheme: dark;
   }
-}
 
-@layer base {
   html {
-    background: var(--color-surface-page);
+    background: var(--color-page);
   }
 
   body {
     font-family: var(--font-body);
-    color: var(--color-ink-soft);
+    color: var(--color-text);
+    background: var(--color-page);
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Numerals are always Sora. A weight in Archivo is a bug (§5.2). */
   h1,
-  h2 {
-    font-family: var(--font-heading);
-    letter-spacing: -0.01em;
-    color: var(--color-ink);
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    color: var(--color-text-strong);
   }
 
   /* Numbers should never reflow as they tick. */
@@ -127,288 +136,321 @@
   }
 
   ::selection {
-    background: var(--color-accent);
-    color: var(--color-accent-ink);
+    background: var(--color-brass);
+    color: var(--color-on-brass);
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-brass);
     outline-offset: 2px;
   }
 
   select option {
-    background: var(--color-surface);
-    color: var(--color-ink);
+    background: var(--color-card);
+    color: var(--color-text);
   }
 }
 
 @layer components {
-  /* Uppercase section eyebrow — "SECTION LABEL" in the spec's type scale. */
-  .stencil {
+  /* ---------------------------------------------------------------- type */
+
+  /* Poster screens. Brass, the widest tracking in the app. */
+  .kicker {
     font-family: var(--font-body);
-    font-size: 0.6875rem;
-    font-weight: 500;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--color-ink-faint);
+    color: var(--color-brass);
   }
 
-  /* Numeral figure — "80 · 6 · 93" in the spec's type scale. */
-  .readout {
-    font-family: var(--font-heading);
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    color: var(--color-ink);
+  /* Card screens. Muted, one step tighter than a kicker. */
+  .label {
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-muted);
   }
 
-  /* One italic serif aside, per screen, max — replaces motivational badges. */
-  .aside {
-    font-family: var(--font-heading);
-    font-style: italic;
-    font-weight: 400;
-    color: var(--color-ink-mid);
+  .poster-title {
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    color: var(--color-text-strong);
+  }
+  /* Two-line poster titles drop to 34 so they still clear the scrim (§5.2). */
+  .poster-title[data-lines="2"] {
+    font-size: 34px;
   }
 
-  /* Generic bordered surface used for page sections and cards. */
+  .screen-title {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text-strong);
+  }
+
+  .big-number {
+    font-family: var(--font-display);
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--color-text-strong);
+  }
+
+  .row-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .row-value {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-brass-text);
+  }
+
+  /* ------------------------------------------------------------ surfaces */
+
   .card {
-    background: var(--color-surface);
+    background: var(--color-card);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
   }
 
-  /* Sage means finished — a completed plan day, never just a text label. */
-  .card-done {
-    background: var(--color-positive-bg);
-    border-radius: var(--radius-card);
+  .row-card {
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-row);
+    padding: 14px 18px;
   }
 
-  /* Hero card — the day's routine, the coach note, sheets. Only these get a shadow. */
-  .card-hero {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+  .hero-card {
+    position: relative;
+    overflow: hidden;
+    background: var(--grad-hero);
+    border: 1px solid var(--color-border-hi);
     border-radius: var(--radius-hero);
-    box-shadow: 0 6px 20px rgba(43, 38, 32, 0.06);
+    box-shadow: var(--shadow-hero);
   }
 
-  /* Ink button — commits and leaves the screen (Begin session, Save). */
-  .btn-ink {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: var(--color-ink);
-    color: var(--color-accent-ink);
-    border-radius: var(--radius-card);
-    font-family: var(--font-body);
-    font-weight: 500;
-    transition: background 150ms ease, transform 100ms ease;
-  }
-  .btn-ink:hover {
-    background: var(--color-ink-hot);
-  }
-  .btn-ink:active {
-    transform: translateY(1px);
-  }
-  .btn-ink:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* Clay button — acts in place, screen stays (Log set, Add to a routine). */
-  .btn-clay {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: var(--color-accent);
-    color: var(--color-accent-ink);
-    border-radius: var(--radius-card);
-    font-family: var(--font-body);
-    font-weight: 500;
-    transition: background 150ms ease, transform 100ms ease;
-  }
-  .btn-clay:hover {
-    background: var(--color-accent-hot);
-  }
-  .btn-clay:active {
-    transform: translateY(1px);
-  }
-  .btn-clay:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* Outline button — secondary action, sits quietly next to an ink/clay button. */
-  .btn-outline {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: transparent;
-    border: 1px solid var(--color-border-control);
-    color: var(--color-ink-mid);
-    border-radius: var(--radius-card);
-    font-family: var(--font-body);
-    font-weight: 500;
-    transition: background 150ms ease;
-  }
-  .btn-outline:hover {
-    background: var(--color-surface-wash);
-  }
-
-  /* Small pill tag — muscle groups, cues, habits, warm-up weights, filters. */
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface-wash);
-    color: var(--color-ink-mid);
-    padding: 0.4rem 0.75rem;
-    font-family: var(--font-body);
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-  .chip[data-active="true"] {
-    background: var(--color-ink);
-    color: var(--color-accent-ink);
-  }
-
-  /* Bordered pill — used for the header "Settings" control. */
-  .pill-outline {
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border-control);
-    color: var(--color-ink-muted);
-    font-family: var(--font-body);
-    font-size: 0.6875rem;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    padding: 0.3rem 0.65rem;
-  }
-
-  /* Bottom tab bar and its items. */
-  .tab-bar {
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-  }
-  .tab-item {
-    color: var(--color-ink-faint);
-  }
-  .tab-item[data-active="true"] {
-    color: var(--color-accent);
-  }
-
-  /* Empty / future slot — wash background, dashed border. Never grey. */
-  .slot-empty {
-    background: var(--color-surface-wash);
-    border: 1px dashed var(--color-border-page);
-    border-radius: var(--radius-card);
-  }
+  /* ----------------------------------------------------------------- art */
 
   /*
-   * The finish/milestone screens are the app's one deliberate exception:
-   * always the odd screen out. In Paper they're dark-on-light's inverse
-   * (dark); in Night — where everything else already went dark — they flip
-   * to be the only paper-bright screen. Never reference these two ambient
-   * tokens directly in a component; use the --inv-* pairs below instead.
+   * A slot is a background-image div with the scrim as a SIBLING layer above
+   * it — never an <img> with object-fit, because the scrim needs to be its
+   * own element (§8.4). Art is decorative: aria-hidden, alt="", and no
+   * layout depends on it, so an empty pool just leaves the plain surface.
    */
-  .surface-inverse {
-    background: var(--color-ink);
-    color: var(--color-surface);
-    --inv-title: #fdfaf4;
-    --inv-eyebrow: #c2604a;
-    --inv-aside: #a39a8a;
-    --inv-tile-bg: #353029;
-    --inv-tile-value: #fdfaf4;
-    --inv-tile-label: #a39a8a;
-    --inv-tile-unit: #8c8375;
-    --inv-pr-bg: #3d4a35;
-    --inv-pr-label: #cdd6c4;
-    --inv-pr-title: #e2e8db;
-    --inv-pr-sub: #cdd6c4;
-    --inv-btn-primary-bg: #fdfaf4;
-    --inv-btn-primary-label: #2b2620;
-    --inv-btn-secondary-border: #453d33;
-    --inv-btn-secondary-label: #c4bcae;
-  }
-  [data-theme="night"] .surface-inverse {
-    background: #fdfaf4;
-    color: #2b2620;
-    --inv-title: #2b2620;
-    --inv-eyebrow: #b0543f;
-    --inv-aside: #6b6152;
-    --inv-tile-bg: #f3f0e6;
-    --inv-tile-value: #2b2620;
-    --inv-tile-label: #a39a8a;
-    --inv-tile-unit: #8c8375;
-    --inv-pr-bg: #cdd6c4;
-    --inv-pr-label: #2b3327;
-    --inv-pr-title: #2b3327;
-    --inv-pr-sub: #2b3327;
-    --inv-btn-primary-bg: #2b2620;
-    --inv-btn-primary-label: #fdfaf4;
-    --inv-btn-secondary-border: #e0d9cb;
-    --inv-btn-secondary-label: #6b6152;
+  .art-layer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-repeat: no-repeat;
   }
 
-  /* On/off switch, styled to match the spec's toggle rows. */
-  .switch {
-    width: 38px;
-    height: 22px;
-    border-radius: 22px;
-    background: var(--color-border-control);
-    position: relative;
-    transition: background 150ms ease;
-    flex-shrink: 0;
-  }
-  .switch[data-on="true"] {
-    background: var(--color-accent);
-  }
-  .switch-knob {
+  /* The flat wash that sits UNDER every gradient, because some draws are
+     near-white and some near-black and we cannot tune per image (§8.5). */
+  .art-wash {
     position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 16px;
-    height: 16px;
-    border-radius: 16px;
-    background: var(--color-surface);
-    transition: left 150ms ease;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.18);
   }
-  .switch[data-on="true"] .switch-knob {
-    left: 19px;
+
+  .art-scrim {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* ------------------------------------------------------------- buttons */
+
+  .btn-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 56px;
+    flex: none;
+    border-radius: var(--radius-button);
+    background: var(--grad-brass);
+    color: var(--color-on-brass);
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 700;
+    box-shadow: 0 10px 24px rgba(184, 137, 60, 0.28);
+  }
+
+  .btn-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 52px;
+    flex: none;
+    border-radius: var(--radius-button);
+    background: transparent;
+    border: 1px solid #33363d;
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* Poster screens square the corners off to 6px. */
+  .btn-poster {
+    border-radius: var(--radius-poster-button);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .btn-primary:disabled,
+  .btn-secondary:disabled {
+    opacity: 0.4;
+  }
+
+  /* The only easing in the app: 180ms on button press and on the set-row
+     state change (§5.6). Everything else is instant, on purpose. */
+  .btn-primary,
+  .btn-secondary,
+  .press {
+    transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  .btn-primary:active,
+  .btn-secondary:active,
+  .press:active {
+    transform: scale(0.98);
+  }
+
+  .link-teal {
+    color: var(--color-teal);
+    font-size: 13px;
+    font-family: var(--font-body);
+  }
+
+  /* -------------------------------------------------- segmented controls */
+
+  .segmented {
+    display: flex;
+    gap: 6px;
+    flex: none;
+    background: var(--color-card-hi);
+    border: 1px solid #24272d;
+    border-radius: var(--radius-control);
+    padding: 4px;
+  }
+  .segmented > button {
+    flex: 1;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 13px;
+    border-radius: 10px;
+    color: var(--color-muted);
+    font-family: var(--font-body);
+  }
+  .segmented > button[data-active="true"] {
+    background: var(--grad-brass);
+    color: var(--color-on-brass);
+    font-weight: 700;
+  }
+
+  /* No trough on poster screens — labels in a row under one rule (§5.5). */
+  .segmented-poster {
+    display: flex;
+    gap: 20px;
+    flex: none;
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 10px;
+  }
+  .segmented-poster > button {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-muted-poster);
+    font-family: var(--font-body);
+  }
+  .segmented-poster > button[data-active="true"] {
+    color: var(--color-brass);
+    font-weight: 700;
+  }
+
+  /* Program screens only. */
+  .mode-chip {
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: var(--font-body);
+    font-weight: 700;
+    border: 1px solid #33363d;
+    color: var(--color-muted);
+  }
+  .mode-chip[data-active="true"] {
+    background: var(--color-brass);
+    border-color: var(--color-brass);
+    color: var(--color-on-brass);
+  }
+
+  /* ------------------------------------------------------------ tab bar */
+
+  .tab-bar {
+    height: 86px;
+    flex: none;
+    border-top: 1px solid var(--color-line);
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 26px 0;
+  }
+  .tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--color-dim);
+  }
+  .tab-item[data-active="true"] {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  /* Inactive tabs carry a transparent indicator of the same size so the
+     labels never shift when the active tab changes (§5.5). */
+  .tab-indicator {
+    width: 22px;
+    height: 3px;
+    border-radius: 3px;
+    background: transparent;
+  }
+  .tab-item[data-active="true"] .tab-indicator {
+    background: linear-gradient(90deg, #e6c684, #b8893c);
+  }
+
+  /* ------------------------------------------------------------- rules */
+
+  /* Poster screens get hairline rules where card screens get borders. */
+  .poster-rule {
+    height: 1px;
+    background: var(--color-rule);
+    flex: none;
+  }
+  .poster-rule[data-brass="true"] {
+    background: var(--color-brass);
   }
 }
 
 /*
- * `animate-in fade-in zoom-in-95` comes from the tailwindcss-animate plugin,
- * which was never installed — the classes were silently doing nothing.
- * Defined here to keep the markup unchanged without adding a dependency.
+ * Honour prefers-reduced-motion by dropping the press-scale and the rest
+ * bar's transition — the bar still updates, it just does not animate (§12).
  */
-@keyframes enter {
-  from {
-    opacity: var(--enter-opacity, 1);
-    transform: scale(var(--enter-scale, 1)) translateY(var(--enter-y, 0px));
-  }
-}
-
-.animate-in {
-  animation-name: enter;
-  animation-duration: 200ms;
-  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-  animation-fill-mode: both;
-}
-.fade-in {
-  --enter-opacity: 0;
-}
-.zoom-in-95 {
-  --enter-scale: 0.95;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .animate-in {
-    animation: none;
-  }
   *,
   *::before,
   *::after {

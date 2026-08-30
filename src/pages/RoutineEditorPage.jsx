@@ -1,327 +1,419 @@
-import React, { useRef, useState } from "react";
-import { GripVertical, Search, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import { isRestEntry, cleanName, setCountFor, formatReps, formatWeight } from "../lib/format";
-import { weekdayLabel, estimateMinutes } from "../lib/training";
-import LibraryPage from "./LibraryPage";
+import { EXERCISE_LIBRARY } from "../lib/exerciseLibrary";
+import { containerSteps, isContainer } from "../lib/format";
 
-function StatTile({ label, value, onChange }) {
+/*
+ * 8D · Workout / Routine builder.
+ *
+ * Scope is deliberately small: sets × reps × target load only. No supersets,
+ * no progression rules, no per-movement notes — those are cut, not deferred.
+ *
+ * Read mode is the same layout with the steppers inert.
+ */
+
+const newId = (prefix) =>
+  `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+/**
+ * A 46px stepper tile inside a 48px row, so the touch target clears 44px even
+ * though the tile reads as 46. Tap either half to step; tap the value to type.
+ */
+export function StepperTile({ label, value, onChange, step = 1, min = 0, readOnly }) {
+  const [editing, setEditing] = useState(false);
+  const holdRef = useRef(null);
+
+  const bump = (delta) => {
+    if (readOnly) return;
+    const next = Math.max(min, Math.round((Number(value) + delta * step) * 100) / 100);
+    onChange(next);
+  };
+
+  // Press and hold repeats, so 110 kg is not 44 taps from zero.
+  const startHold = (delta) => {
+    if (readOnly) return;
+    bump(delta);
+    holdRef.current = setTimeout(function repeat() {
+      bump(delta);
+      holdRef.current = setTimeout(repeat, 90);
+    }, 420);
+  };
+  const endHold = () => clearTimeout(holdRef.current);
+  useEffect(() => () => clearTimeout(holdRef.current), []);
+
   return (
-    <div className="flex-1 bg-surface-inset rounded-inset p-2 text-center">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-ink-faint">
-        {label}
+    <div className="flex-1" style={{ height: 48, display: "flex", alignItems: "center" }}>
+      <div
+        className="relative w-full"
+        style={{
+          height: 46,
+          borderRadius: 12,
+          background: "var(--color-card-hi)",
+          border: "1px solid #24272d",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+        }}
+      >
+        {editing ? (
+          <input
+            autoFocus
+            inputMode="decimal"
+            defaultValue={value}
+            onBlur={(e) => {
+              onChange(Math.max(min, Number(e.target.value) || 0));
+              setEditing(false);
+            }}
+            style={{
+              width: "70%",
+              textAlign: "center",
+              background: "transparent",
+              outline: "none",
+              fontFamily: "var(--font-display)",
+              fontSize: 15,
+              fontWeight: 700,
+              color: "var(--color-brass-text)",
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => !readOnly && setEditing(true)}
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 15,
+              fontWeight: 700,
+              color: "var(--color-brass-text)",
+              lineHeight: 1.1,
+            }}
+          >
+            {value}
+          </button>
+        )}
+        <span
+          className="uppercase"
+          style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--color-dim)" }}
+        >
+          {label}
+        </span>
+
+        {!readOnly && (
+          <>
+            <button
+              type="button"
+              aria-label={`Less ${label}`}
+              onPointerDown={() => startHold(-1)}
+              onPointerUp={endHold}
+              onPointerLeave={endHold}
+              style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "34%" }}
+            />
+            <button
+              type="button"
+              aria-label={`More ${label}`}
+              onPointerDown={() => startHold(1)}
+              onPointerUp={endHold}
+              onPointerLeave={endHold}
+              style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "34%" }}
+            />
+          </>
+        )}
       </div>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1.5 w-full bg-transparent text-center readout text-lg focus:outline-none"
-      />
     </div>
   );
 }
 
-export default function RoutineEditorPage({ dayIdx, onOpenDetail, onBack }) {
-  const {
-    plans,
-    activePlanId,
-    exerciseBank,
-    updateBankField,
-    appendExerciseToDay,
-    removeExerciseFrom,
-    reorderExercise,
-    setDayNote,
-    setDayRest,
-    setDayProgression,
-  } = useWorkout();
+/** Search, then everything grouped by body part, then "Create movement". */
+export function LibrarySheet({ onPick, onClose }) {
+  const { exerciseBank, addBankExercise } = useWorkout();
+  const [query, setQuery] = useState("");
 
-  const [expanded, setExpanded] = useState(null);
-  const [newMovement, setNewMovement] = useState("");
-  const [showPicker, setShowPicker] = useState(false);
-  // { index, targetIndex, offsetY, startY, rects } while a row is being dragged.
-  const [drag, setDrag] = useState(null);
-  const rowRefs = useRef([]);
+  const names = [
+    ...new Set([...Object.keys(exerciseBank || {}), ...EXERCISE_LIBRARY.map((e) => e.name)]),
+  ].filter((name) => name !== "_empty" && !exerciseBank?.[name]?.isHidden);
 
-  const day = plans[activePlanId]?.[dayIdx];
-  if (!day) return null;
+  const groups = {};
+  names.forEach((name) => {
+    if (query && !name.toLowerCase().includes(query.toLowerCase())) return;
+    const part =
+      exerciseBank?.[name]?.muscleGroups?.[0] ||
+      EXERCISE_LIBRARY.find((e) => e.name === name)?.muscleGroups?.[0] ||
+      "Other";
+    (groups[part] = groups[part] || []).push(name);
+  });
 
-  const exercises = day.exercises || [];
-  const isRest = exercises.length > 0 && exercises.every((ex) => isRestEntry(ex));
-  const progression = { auto: true, incrementKg: 2.5, ...day.progression };
-
-  const totalSets = exercises.reduce((sum, ex) => {
-    if (isRestEntry(ex)) return sum;
-    return sum + setCountFor(exerciseBank[cleanName(ex)]);
-  }, 0);
-  const minutes = estimateMinutes(day, exerciseBank);
-
-  const addMovement = () => {
-    const name = cleanName(newMovement);
+  const create = () => {
+    const name = query.trim();
     if (!name) return;
-    appendExerciseToDay(activePlanId, dayIdx, name);
-    setNewMovement("");
-  };
-
-  // Drag to reorder — collapses any expanded row first so every row's
-  // height is predictable while the list is being measured mid-drag.
-  const beginDrag = (index, e) => {
-    setExpanded(null);
-    const rects = rowRefs.current.map((el) => el?.getBoundingClientRect());
-    setDrag({ index, targetIndex: index, offsetY: 0, startY: e.clientY, rects });
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const onDragMove = (e) => {
-    if (!drag) return;
-    const offsetY = e.clientY - drag.startY;
-    const { rects, index } = drag;
-    const draggedCenter = rects[index].top + rects[index].height / 2 + offsetY;
-
-    let target = index;
-    for (let i = index - 1; i >= 0; i--) {
-      if (draggedCenter < rects[i].top + rects[i].height / 2) target = i;
-      else break;
-    }
-    for (let i = index + 1; i < rects.length; i++) {
-      if (draggedCenter > rects[i].top + rects[i].height / 2) target = i;
-      else break;
-    }
-    setDrag((d) => ({ ...d, offsetY, targetIndex: target }));
-  };
-
-  const endDrag = () => {
-    if (drag && drag.targetIndex !== drag.index) {
-      reorderExercise(activePlanId, dayIdx, drag.index, drag.targetIndex);
-    }
-    setDrag(null);
-  };
-
-  /** How far row `i` should visually shift while another row drags past it. */
-  const rowTransform = (i) => {
-    if (!drag) return "";
-    const { index, targetIndex, offsetY, rects } = drag;
-    if (i === index) return `translateY(${offsetY}px)`;
-    const gap = rects[index].height;
-    if (index < targetIndex && i > index && i <= targetIndex) return `translateY(${-gap}px)`;
-    if (index > targetIndex && i < index && i >= targetIndex) return `translateY(${gap}px)`;
-    return "";
+    addBankExercise(name);
+    onPick(name);
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-8">
-      <div>
-        <button type="button" onClick={onBack} className="text-sm text-ink-muted hover:text-accent">
-          Program
+    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <button type="button" style={{ flex: 1 }} onClick={onClose} aria-label="Close" />
+      <div
+        className="w-full max-w-lg mx-auto flex flex-col gap-3"
+        style={{
+          background: "var(--color-card)",
+          borderTop: "1px solid var(--color-border)",
+          padding: 22,
+          maxHeight: "72dvh",
+        }}
+      >
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find a movement"
+          style={{
+            height: 44,
+            flex: "none",
+            borderRadius: "var(--radius-control)",
+            background: "var(--color-card-hi)",
+            border: "1px solid #24272d",
+            padding: "0 14px",
+            color: "var(--color-text)",
+            outline: "none",
+          }}
+        />
+        <div className="flex flex-col gap-2 min-h-0" style={{ overflowY: "auto" }}>
+          {Object.entries(groups).map(([part, list]) => (
+            <div key={part} className="flex flex-col gap-1">
+              <span className="label" style={{ paddingLeft: 2 }}>
+                {part}
+              </span>
+              {list.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onPick(name)}
+                  className="row-card text-left row-title"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+        {query.trim() && (
+          <button type="button" className="btn-secondary" onClick={create}>
+            Create “{query.trim()}”
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function RoutineEditorPage({
+  routineId,
+  readOnly: initialReadOnly,
+  // "Build my own" on first run: the routine it makes also becomes Day 1.
+  asFirstDay,
+  onBack,
+}) {
+  const { getRoutine, saveRoutine, addRoutineAsDay, settings, exerciseBank, getDetail } =
+    useWorkout();
+  const existing = routineId ? getRoutine(routineId) : null;
+
+  const [readOnly, setReadOnly] = useState(!!initialReadOnly && !!existing);
+  const [name, setName] = useState(existing?.name || "");
+  const [movements, setMovements] = useState(existing?.movements || []);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const loadStep = settings.plateIncrementKg || 2.5;
+  const isValid = name.trim().length > 0 && movements.length > 0;
+
+  const patch = (index, field, value) =>
+    setMovements((prev) =>
+      prev.map((movement, i) => (i === index ? { ...movement, [field]: value } : movement))
+    );
+
+  const add = (movementId) => {
+    const bank = exerciseBank?.[movementId] || {};
+    setMovements((prev) => [
+      ...prev,
+      {
+        movementId,
+        order: prev.length,
+        sets: Math.max(1, parseInt(bank.sets, 10) || 3),
+        reps: bank.reps || "5",
+        targetLoadKg: parseFloat(bank.weight) || 0,
+      },
+    ]);
+    setPickerOpen(false);
+  };
+
+  const save = () => {
+    if (!isValid) return;
+    const routine = {
+      id: existing?.id || newId("r"),
+      name: name.trim(),
+      focus: existing?.focus || "",
+      movements: movements.map((movement, order) => ({ ...movement, order })),
+    };
+    if (asFirstDay) addRoutineAsDay(routine);
+    else saveRoutine(routine);
+    onBack();
+  };
+
+  return (
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-[14px]">
+      <div className="flex items-center justify-between flex-none">
+        <button type="button" className="link-teal" onClick={onBack}>
+          {readOnly ? "Back" : "Cancel"}
         </button>
-        <h1 className="mt-2.5 text-4xl">{day.name || weekdayLabel(dayIdx)}</h1>
-        <p className="mt-1.5 text-sm text-ink-muted">
-          {weekdayLabel(dayIdx)}
-          {!isRest &&
-            ` · ${exercises.length} movement${exercises.length === 1 ? "" : "s"} · ${totalSets} set${
-              totalSets === 1 ? "" : "s"
-            }${minutes > 0 ? ` · ~${minutes} min` : ""}`}
-        </p>
+        <span
+          className="uppercase"
+          style={{ fontSize: 11, letterSpacing: "0.12em", fontWeight: 700, color: "var(--color-muted)" }}
+        >
+          {readOnly ? "Routine" : existing ? "Edit routine" : "New routine"}
+        </span>
+        {readOnly ? (
+          <button
+            type="button"
+            style={{ fontSize: 13, color: "var(--color-brass)" }}
+            onClick={() => setReadOnly(false)}
+          >
+            Edit
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={save}
+            disabled={!isValid}
+            style={{
+              fontSize: 13,
+              // Dim and inert until the routine has a name and a movement.
+              color: isValid ? "var(--color-brass)" : "var(--color-dim)",
+            }}
+          >
+            Save
+          </button>
+        )}
       </div>
 
-      <div className="card p-4 flex items-center justify-between">
-        <span className="text-sm text-ink-soft">This is a rest day</span>
+      <div className="card flex-none flex flex-col gap-[6px]" style={{ padding: 16 }}>
+        <span className="label">Name</span>
+        <input
+          value={name}
+          readOnly={readOnly}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Lower A"
+          style={{
+            background: "transparent",
+            outline: "none",
+            fontFamily: "var(--font-display)",
+            fontSize: 22,
+            fontWeight: 700,
+            color: "var(--color-text-strong)",
+            caretColor: "var(--color-brass)",
+          }}
+        />
+      </div>
+
+      <div className="flex flex-col gap-[8px] min-h-0" style={{ overflowY: "auto" }}>
+        <span className="label" style={{ paddingLeft: 2 }}>
+          Movements
+        </span>
+
+        {movements.map((movement, index) => {
+          // A container holds sub-movements rather than a load, so it gets a
+          // set count and its own list — never a Reps or Load stepper.
+          const detail = getDetail(movement.movementId);
+          const container = isContainer(detail);
+          const steps = containerSteps(detail);
+
+          return (
+            <div
+              key={`${movement.movementId}-${index}`}
+              className="card flex flex-col gap-[8px]"
+              style={{ padding: 14 }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="row-title truncate">{movement.movementId}</span>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    style={{ fontSize: 13, color: "var(--color-dim)", flex: "none" }}
+                    onClick={() => setMovements((prev) => prev.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              {container && (
+                <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                  {steps.length} movement{steps.length === 1 ? "" : "s"} · {steps.join(", ")}
+                </span>
+              )}
+
+              <div className="flex gap-[8px]">
+                <StepperTile
+                  label="Sets"
+                  value={movement.sets}
+                  min={1}
+                  readOnly={readOnly}
+                  onChange={(v) => patch(index, "sets", v)}
+                />
+                {!container && (
+                  <>
+                    <StepperTile
+                      label="Reps"
+                      value={Number(movement.reps) || 0}
+                      min={1}
+                      readOnly={readOnly}
+                      onChange={(v) => patch(index, "reps", String(v))}
+                    />
+                    <StepperTile
+                      label="Load"
+                      value={movement.targetLoadKg}
+                      step={loadStep}
+                      readOnly={readOnly}
+                      onChange={(v) => patch(index, "targetLoadKg", v)}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            style={{
+              height: 52,
+              flex: "none",
+              borderRadius: "var(--radius-row)",
+              border: "1px dashed #3a3f48",
+              color: "var(--color-brass)",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Add from library
+          </button>
+        )}
+      </div>
+
+      {!readOnly && (
         <button
           type="button"
-          role="switch"
-          aria-checked={isRest}
-          onClick={() => setDayRest(activePlanId, dayIdx, !isRest)}
-          className="switch"
-          data-on={isRest}
+          className="btn-primary"
+          style={{ marginTop: "auto" }}
+          onClick={save}
+          disabled={!isValid}
         >
-          <span className="switch-knob" />
+          Save routine
         </button>
-      </div>
-
-      {isRest ? (
-        <input
-          type="text"
-          value={day.note || ""}
-          onChange={(e) => setDayNote(activePlanId, dayIdx, e.target.value)}
-          placeholder="Note, e.g. walk 40 min"
-          className="w-full p-3 border border-border-control rounded-card bg-surface"
-        />
-      ) : (
-        <>
-          <div className="space-y-2.5">
-            {exercises.map((ex, i) => {
-              const name = cleanName(ex);
-              const bankData = exerciseBank[name];
-              const isOpen = expanded === i;
-              const isDragging = drag?.index === i;
-              return (
-                <div
-                  key={i}
-                  ref={(el) => (rowRefs.current[i] = el)}
-                  className="card p-4 relative"
-                  style={{
-                    transform: rowTransform(i),
-                    transition: isDragging ? "none" : "transform 150ms ease",
-                    zIndex: isDragging ? 10 : 1,
-                    boxShadow: isDragging ? "0 10px 24px rgba(43,38,32,.18)" : undefined,
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onPointerDown={(e) => beginDrag(i, e)}
-                      onPointerMove={onDragMove}
-                      onPointerUp={endDrag}
-                      onPointerCancel={endDrag}
-                      aria-label={`Reorder ${name}`}
-                      className="touch-none cursor-grab active:cursor-grabbing text-ink-faint p-1 -ml-1"
-                    >
-                      <GripVertical className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExpanded(isOpen ? null : i)}
-                      className="flex-1 text-left"
-                    >
-                      <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
-                        {name}
-                      </div>
-                      {bankData && !bankData.isHidden && (
-                        <div className="text-xs text-ink-muted mt-0.5">
-                          {bankData.sets}×{formatReps(bankData.reps, bankData.repsUnit)}{" "}
-                          {formatWeight(bankData.weight, bankData.weightUnit)}
-                          {bankData.restSeconds
-                            ? ` · rest ${Math.floor(bankData.restSeconds / 60)}:${String(
-                                bankData.restSeconds % 60
-                              ).padStart(2, "0")}`
-                            : ""}
-                        </div>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenDetail(name)}
-                      className="text-xs text-accent"
-                    >
-                      Detail
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeExerciseFrom(activePlanId, dayIdx, i)}
-                      aria-label={`Remove ${name}`}
-                      className="text-ink-faint hover:text-negative"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {isOpen && bankData && (
-                    <div className="mt-3 flex gap-2">
-                      <StatTile
-                        label="Sets"
-                        value={bankData.sets}
-                        onChange={(v) => updateBankField(name, "sets", v)}
-                      />
-                      <StatTile
-                        label="Reps"
-                        value={bankData.reps}
-                        onChange={(v) => updateBankField(name, "reps", v)}
-                      />
-                      <StatTile
-                        label="Weight"
-                        value={bankData.weight}
-                        onChange={(v) => updateBankField(name, "weight", v)}
-                      />
-                      <StatTile
-                        label="Rest"
-                        value={bankData.restSeconds ?? ""}
-                        onChange={(v) => updateBankField(name, "restSeconds", v)}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            <div className="slot-empty p-3 flex gap-2">
-              <input
-                type="text"
-                list="exercise-bank-list"
-                value={newMovement}
-                onChange={(e) => setNewMovement(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addMovement()}
-                placeholder="Add movement from library..."
-                className="flex-1 bg-transparent focus:outline-none text-sm"
-              />
-              <button type="button" onClick={addMovement} className="text-sm font-medium text-accent">
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowPicker(true)}
-                aria-label="Browse the library"
-                className="text-ink-faint hover:text-accent"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {showPicker && (
-            <div className="fixed inset-0 z-40 bg-surface-page overflow-y-auto p-3 sm:p-6">
-              <LibraryPage
-                onPick={(name) => {
-                  appendExerciseToDay(activePlanId, dayIdx, name);
-                  setShowPicker(false);
-                }}
-                onBack={() => setShowPicker(false)}
-              />
-            </div>
-          )}
-
-          <div>
-            <div className="stencil mb-2.5">Progression</div>
-            <div className="card divide-y divide-border">
-              <div className="p-4 flex items-center justify-between">
-                <span className="text-sm text-ink-soft">Add weight when all reps clear</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={progression.auto}
-                  onClick={() =>
-                    setDayProgression(activePlanId, dayIdx, { auto: !progression.auto })
-                  }
-                  className="switch"
-                  data-on={progression.auto}
-                >
-                  <span className="switch-knob" />
-                </button>
-              </div>
-              <div className="p-4 flex items-center justify-between">
-                <span className="text-sm text-ink-soft">Increment</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={progression.incrementKg}
-                    onChange={(e) =>
-                      setDayProgression(activePlanId, dayIdx, {
-                        incrementKg: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                    className="w-14 text-right bg-transparent focus:outline-none text-sm font-medium text-ink-mid"
-                  />
-                  <span className="text-sm text-ink-mid">kg</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
       )}
 
-      <button type="button" onClick={onBack} className="btn-ink w-full py-4">
-        Save routine
-      </button>
+      {pickerOpen && <LibrarySheet onPick={add} onClose={() => setPickerOpen(false)} />}
     </div>
   );
 }

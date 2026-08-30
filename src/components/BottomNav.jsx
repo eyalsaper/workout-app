@@ -1,51 +1,52 @@
 import React from "react";
-import { Dumbbell, CalendarDays, TrendingUp } from "lucide-react";
+
+/*
+ * Three tabs, fixed, text only. This never grows, and it is never icons-only.
+ *
+ * A flex child of the app shell rather than `position: fixed`: the shell is a
+ * flex column and the bar carries `flex: none`, which is what stops long
+ * content either squashing it or painting over it.
+ */
 
 const TABS = [
   {
     key: "workout",
     label: "Workout",
-    icon: Dumbbell,
-    match: ["workout", "buildWorkout", "session", "sessionSummary", "movementDetail"],
+    match: ["workout", "session", "sessionSummary", "library", "buildWorkout"],
   },
   {
     key: "program",
     label: "Program",
-    icon: CalendarDays,
-    match: ["program", "weekPlanner", "routineEditor", "planBuilder"],
+    match: ["program", "planBuilder", "planDay", "routineEditor", "blocks"],
   },
   {
     key: "progress",
     label: "Progress",
-    icon: TrendingUp,
-    match: ["progress", "liftHistory", "liftLadder"],
+    match: ["progress", "milestone", "ledger", "movementDetail"],
   },
 ];
 
-/**
- * Fixed bottom tab bar. Settings lives in the header instead of a tab —
- * see Shell's header pill in App.jsx.
- */
 export default function BottomNav({ activePage, onNavigate }) {
   return (
-    <nav className="tab-bar fixed bottom-0 left-0 right-0 z-30 flex pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-lg mx-auto w-full flex">
-        {TABS.map(({ key, label, icon: Icon, match }) => {
-          const isActive = match.includes(activePage);
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onNavigate(key)}
-              data-active={isActive}
-              className="tab-item flex-1 py-3 flex flex-col items-center gap-1 font-medium text-xs transition-colors"
-            >
-              <Icon className="w-5 h-5" />
-              {label}
-            </button>
-          );
-        })}
-      </div>
+    <nav className="tab-bar pb-[env(safe-area-inset-bottom)]" aria-label="Sections">
+      {TABS.map(({ key, label, match }) => {
+        const isActive = match.includes(activePage);
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onNavigate(key)}
+            data-active={isActive}
+            aria-current={isActive ? "page" : undefined}
+            className="tab-item"
+          >
+            {/* Inactive tabs keep an indicator of the same size, transparent,
+                so the labels never shift when the active tab changes. */}
+            <span className="tab-indicator" aria-hidden="true" />
+            {label}
+          </button>
+        );
+      })}
     </nav>
   );
 }

@@ -56,3 +56,149 @@ export function downloadTextFile(filename, text, mimeType = "text/csv") {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+// ------------------------------------------------------------------- v2
+/**
+ * The §10.5 export shape — one row per set, carrying the plan day and round
+ * so an export can be re-imported without losing where a session sat.
+ *
+ * `rows` is [[sessionId, session], ...]; `dayNameFor` resolves a planDayId to
+ * "Day 3" and is passed in so this file never reaches into the programme.
+ */
+export function monthCsv(rows, dayNameFor = () => "") {
+  const header = [
+    "date",
+    "session_id",
+    "routine",
+    "plan_day",
+    "round",
+    "movement",
+    "set_index",
+    "weight_kg",
+    "reps",
+  ];
+  const out = [header];
+
+  [...(rows || [])]
+    .sort((a, b) => (a[1].date || "").localeCompare(b[1].date || ""))
+    .forEach(([id, session]) => {
+      Object.entries(session.entries || {}).forEach(([movement, entry]) => {
+        (entry.sets || []).forEach((set, index) => {
+          if (!set?.done) return;
+          out.push([
+            session.startedAt ? new Date(session.startedAt).toISOString() : session.date,
+            id,
+            session.label || "",
+            dayNameFor(session.planDayId) || "",
+            session.roundNumber ?? "",
+            movement,
+            index + 1,
+            set.weight || "",
+            set.reps || "",
+          ]);
+        });
+      });
+    });
+
+  return out.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+export function exportMonthCsv(rows, monthKey, dayNameFor) {
+  downloadTextFile(`iron-log-${monthKey}.csv`, monthCsv(rows, dayNameFor));
+}
+
+/**
+ * Import (§10.5). Deliberately tolerant: unknown columns are ignored, unknown
+ * movements become user movements, and unparseable rows are skipped and
+ * counted rather than aborting the whole file.
+ *
+ * It never creates a programme — imported history lands with a null
+ * planDayId, and the user still picks or builds a plan.
+ */
+export function parseImportCsv(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim());
+  if (lines.length < 2) return { sessions: {}, imported: 0, skipped: 0, movements: [] };
+
+  const split = (line) => {
+    const cells = [];
+    let cell = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (quoted) {
+        if (ch === '"' && line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else if (ch === '"') quoted = false;
+        else cell += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ",") {
+        cells.push(cell);
+        cell = "";
+      } else cell += ch;
+    }
+    cells.push(cell);
+    return cells;
+  };
+
+  const header = split(lines[0]).map((h) => h.trim().toLowerCase());
+  const col = (name) => header.indexOf(name);
+  const iDate = col("date");
+  const iMovement = col("movement") === -1 ? col("exercise") : col("movement");
+  const iWeight = col("weight_kg") === -1 ? col("weight") : col("weight_kg");
+  const iReps = col("reps");
+
+  if (iDate === -1 || iMovement === -1) {
+    return { sessions: {}, imported: 0, skipped: lines.length - 1, movements: [] };
+  }
+
+  const sessions = {};
+  const movements = new Set();
+  let imported = 0;
+  let skipped = 0;
+
+  lines.slice(1).forEach((line) => {
+    const cells = split(line);
+    const rawDate = (cells[iDate] || "").trim();
+    const date = rawDate.slice(0, 10);
+    const movement = (cells[iMovement] || "").trim();
+    const weight = (cells[iWeight] || "").trim();
+    const reps = (cells[iReps] || "").trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !movement || !reps) {
+      skipped++;
+      return;
+    }
+
+    movements.add(movement);
+    const id = `import_${date}`;
+    if (!sessions[id]) {
+      sessions[id] = {
+        date,
+        planId: null,
+        dayIndex: null,
+        planDayId: null,
+        roundNumber: null,
+        label: "Imported",
+        startedAt: new Date(`${date}T12:00:00`).getTime(),
+        finishedAt: new Date(`${date}T13:00:00`).getTime(),
+        entries: {},
+        note: "",
+      };
+    }
+    const entry = (sessions[id].entries[movement] = sessions[id].entries[movement] || { sets: [] });
+    entry.sets.push({
+      weight,
+      weightUnit: "KG",
+      reps,
+      repsUnit: "Reps",
+      done: true,
+      at: sessions[id].startedAt,
+    });
+    imported++;
+  });
+
+  return { sessions, imported, skipped, movements: [...movements] };
+}

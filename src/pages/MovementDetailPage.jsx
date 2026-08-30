@@ -1,280 +1,603 @@
 import React, { useState } from "react";
-import { ChevronLeft, Trash2 } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
+import { BarAxis, Bars, InsetBlock, PosterRow, Rule } from "../components/poster";
+import { containerSteps, isContainer } from "../lib/format";
 import {
-  guessPattern,
+  EQUIPMENT_OPTIONS,
   LIBRARY_BY_NAME,
   PATTERN_LABELS,
-  EQUIPMENT_OPTIONS,
+  guessPattern,
   resolveEquipment,
 } from "../lib/exerciseLibrary";
-import { exerciseHistory, liftStats, weekdayLabel, MUSCLE_GROUPS as ALL_GROUPS } from "../lib/training";
+import {
+  MUSCLE_GROUPS,
+  exerciseHistory,
+  formatTonnage,
+  friendlyDate,
+  liftStats,
+} from "../lib/training";
+import { getStanding, standardsKeyFor } from "../lib/achievements";
 
-const WEIGHT_UNITS = ["KG", "LBS", "Body Wt."];
+/*
+ * Movement detail — the info page for one movement.
+ *
+ * Reached by tapping a row in the movement library, in History, or in the
+ * Record book. Holds everything the app knows about a movement: the user's
+ * own notes, the coaching cues, its muscle groups and equipment, its bank
+ * defaults, its history — and, for a CONTAINER movement, the list of
+ * sub-movements it holds.
+ *
+ * A container ("Core Workout") is not a lift. It is a checklist of movements
+ * you work through, so it never shows a load or a rep target.
+ */
+
 const REPS_UNITS = ["Reps", "Secs", "Mins"];
+const WEIGHT_UNITS = ["KG", "LBS", "Body Wt."];
 
-export default function MovementDetailPage({ exerciseName, onBack, onSeeHistory }) {
+function Chip({ children }) {
+  return (
+    <span
+      style={{
+        borderRadius: 999,
+        padding: "5px 11px",
+        fontSize: 12,
+        background: "var(--color-poster-card)",
+        color: "var(--color-muted-poster)",
+        flex: "none",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="flex flex-col gap-[5px]">
+      <span className="label">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputStyle = {
+  height: 42,
+  borderRadius: "var(--radius-control)",
+  background: "var(--color-card-hi)",
+  border: "1px solid #24272d",
+  padding: "0 12px",
+  color: "var(--color-text)",
+  outline: "none",
+  width: "100%",
+};
+
+export default function MovementDetailPage({ movementName, onBack }) {
   const {
     exerciseBank,
     sessions,
     bodyweightKg,
+    settings,
     getDetail,
     updateDetailField,
+    toggleRoutineItem,
     updateBankField,
+    updateAltSet,
     removeBankExercise,
     exerciseAppearsIn,
-    appendExerciseToDay,
-    activePlanId,
-    plans,
+    routines,
+    saveRoutine,
   } = useWorkout();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [pickingDay, setPickingDay] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [addingTo, setAddingTo] = useState(false);
 
-  const bankData = exerciseBank[exerciseName];
-  const detail = getDetail(exerciseName);
-  const pattern = bankData?.pattern || guessPattern(exerciseName);
-  const cues = LIBRARY_BY_NAME[exerciseName]?.cues || [];
-  const equipment = resolveEquipment(bankData, exerciseName);
-  const rest = parseInt(bankData?.restSeconds, 10) || 90;
+  const bankData = exerciseBank?.[movementName];
+  const detail = getDetail(movementName);
+  const container = isContainer(detail);
+  const steps = containerSteps(detail);
 
-  const history = exerciseHistory(sessions, exerciseName, bodyweightKg);
-  const best = history.reduce(
-    (top, h) => (!top || h.e1rm > top.e1rm ? h : top),
-    null
-  );
-  const stats = liftStats(sessions, exerciseName, bodyweightKg);
-  const appearsIn = exerciseAppearsIn(exerciseName);
-
+  const cues = LIBRARY_BY_NAME[movementName]?.cues || [];
+  const pattern = bankData?.pattern || guessPattern(movementName);
+  const equipment = resolveEquipment(bankData, movementName);
+  const rest = parseInt(bankData?.restSeconds, 10) || settings.defaultRestSeconds || 90;
   const groups = bankData?.muscleGroups || [];
-  const toggleGroup = (group) => {
-    const next = groups.includes(group) ? groups.filter((g) => g !== group) : [...groups, group];
-    updateBankField(exerciseName, "muscleGroups", next);
+
+  const points = exerciseHistory(sessions, movementName, bodyweightKg);
+  const recent = points.slice(-8);
+  const stats = liftStats(sessions, movementName, bodyweightKg);
+  const appearsIn = exerciseAppearsIn(movementName);
+
+  const standardsKey = standardsKeyFor(movementName);
+  const standing =
+    standardsKey && settings.sex
+      ? getStanding(standardsKey, sessions, bodyweightKg, settings.sex)
+      : null;
+
+  const totalTonnage = points.reduce((sum, p) => sum + p.tonnage, 0);
+
+  const toggleGroup = (group) =>
+    updateBankField(
+      movementName,
+      "muscleGroups",
+      groups.includes(group) ? groups.filter((g) => g !== group) : [...groups, group]
+    );
+
+  const links = detail.links || [];
+
+  const setLink = (index, value) => {
+    const next = [...links];
+    next[index] = value;
+    updateDetailField(movementName, "links", next.filter((v, i) => v || i < next.length - 1));
+  };
+
+  /** Appends this movement to a routine, with the bank's defaults. */
+  const addToRoutine = (routine) => {
+    const bank = bankData || {};
+    saveRoutine({
+      ...routine,
+      movements: [
+        ...(routine.movements || []),
+        {
+          movementId: movementName,
+          order: (routine.movements || []).length,
+          sets: Math.max(1, parseInt(bank.sets, 10) || 3),
+          reps: bank.reps || "5",
+          targetLoadKg: parseFloat(bank.weight) || 0,
+        },
+      ],
+    });
+    setAddingTo(false);
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 animate-in fade-in duration-300 pb-8">
-      <div className="flex items-baseline justify-between">
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto", padding: "6px 24px 16px" }}
+    >
+      <div className="flex items-center justify-between flex-none" style={{ marginBottom: 10 }}>
+        <button type="button" className="link-teal" onClick={onBack}>
+          Back
+        </button>
+        <span className="kicker">{container ? "Routine" : "Movement"}</span>
         <button
           type="button"
-          onClick={onBack}
-          className="text-sm text-ink-muted hover:text-accent flex items-center gap-1"
+          style={{ fontSize: 13, color: "var(--color-brass)" }}
+          onClick={() => setEditing((v) => !v)}
         >
-          <ChevronLeft className="w-4 h-4" /> Back
+          {editing ? "Done" : "Edit"}
         </button>
-        {bankData && !bankData.isHidden && (
-          <button
-            type="button"
-            onClick={() => setIsEditing((v) => !v)}
-            className="text-sm font-medium text-accent"
+      </div>
+
+      <span className="poster-title" data-lines={movementName.length > 14 ? "2" : "1"}>
+        {movementName}
+      </span>
+
+      {/* The user's own words. Empty field, no prompts. */}
+      {editing ? (
+        <textarea
+          value={detail.explanation || ""}
+          onChange={(e) => updateDetailField(movementName, "explanation", e.target.value)}
+          placeholder="What this is, how it should feel…"
+          rows={3}
+          style={{
+            ...inputStyle,
+            height: "auto",
+            padding: 12,
+            marginTop: 12,
+            resize: "none",
+            fontFamily: "var(--font-body)",
+            fontSize: 14,
+            lineHeight: 1.6,
+          }}
+        />
+      ) : (
+        detail.explanation && (
+          <p
+            style={{
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: "var(--color-text)",
+              paddingTop: 12,
+            }}
           >
-            {isEditing ? "Done" : "Edit"}
-          </button>
-        )}
-      </div>
+            {detail.explanation}
+          </p>
+        )
+      )}
 
-      <div>
-        <h1 className="text-4xl">{exerciseName}</h1>
-        {isEditing ? (
-          <textarea
-            value={detail.explanation || ""}
-            onChange={(e) => updateDetailField(exerciseName, "explanation", e.target.value)}
-            placeholder="Describe the movement..."
-            className="mt-2 w-full p-3 border border-border-control rounded-card bg-surface min-h-[70px] text-sm"
-          />
-        ) : (
-          detail.explanation && (
-            <p className="mt-2 text-sm text-ink-mid leading-relaxed">{detail.explanation}</p>
-          )
-        )}
-      </div>
+      {!container && (
+        <div className="flex flex-wrap gap-[6px]" style={{ paddingTop: 14 }}>
+          {groups.length > 0 && <Chip>{groups.join(" · ")}</Chip>}
+          {PATTERN_LABELS[pattern] && <Chip>{PATTERN_LABELS[pattern]}</Chip>}
+          <Chip>{equipment}</Chip>
+          <Chip>
+            Rest {Math.floor(rest / 60)}:{String(rest % 60).padStart(2, "0")}
+          </Chip>
+        </div>
+      )}
 
-      {isEditing ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-1.5">
-            {ALL_GROUPS.map((group) => (
+      {/*
+        A movement that still holds a nested list, only until the one-time
+        conversion has run. Routines live in Routines now — there is no way
+        to make a new one here.
+      */}
+      {container && (
+        <div style={{ paddingTop: 20 }}>
+          <span className="label">In this routine · {steps.length}</span>
+          <InsetBlock style={{ marginTop: 10 }}>
+            <div className="flex flex-col gap-[10px]">
+              {steps.map((step, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => toggleRoutineItem(movementName, index)}
+                    className="flex items-center gap-3 text-left"
+                    style={{ minHeight: 32 }}
+                  >
+                    <span
+                      style={{
+                        width: 18,
+                        height: 18,
+                        flex: "none",
+                        borderRadius: 5,
+                        border: detail.routineChecked?.[`${index}_0`]
+                          ? "1px solid var(--color-teal)"
+                          : "1px solid #33363d",
+                        background: detail.routineChecked?.[`${index}_0`]
+                          ? "var(--color-teal)"
+                          : "transparent",
+                        color: "#0e0f12",
+                        fontSize: 12,
+                        lineHeight: "16px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {detail.routineChecked?.[`${index}_0`] ? "✓" : ""}
+                    </span>
+                    <span style={{ fontSize: 14, color: "var(--color-text)" }}>{step}</span>
+                  </button>
+              ))}
+            </div>
+          </InsetBlock>
+        </div>
+      )}
+
+      {/* ---- cues ---- */}
+      {!container && cues.length > 0 && !editing && (
+        <div style={{ paddingTop: 22 }}>
+          <span className="label">Cues</span>
+          <ul className="flex flex-col gap-[8px]" style={{ paddingTop: 10 }}>
+            {cues.map((cue, i) => (
+              <li key={i} className="flex gap-3" style={{ fontSize: 14, color: "var(--color-text)" }}>
+                <span
+                  className="tabular"
+                  style={{ color: "var(--color-brass)", fontFamily: "var(--font-display)" }}
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                {cue}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ---- bank defaults, editable ---- */}
+      {editing && bankData && (
+        <div className="flex flex-col gap-[12px]" style={{ paddingTop: 22 }}>
+          <span className="label">Muscle groups</span>
+          <div className="flex flex-wrap gap-[6px]">
+            {MUSCLE_GROUPS.map((group) => (
               <button
                 key={group}
                 type="button"
-                onClick={() => toggleGroup(group)}
-                className="chip"
+                className="mode-chip"
                 data-active={groups.includes(group)}
+                onClick={() => toggleGroup(group)}
               >
                 {group}
               </button>
             ))}
           </div>
-          <label className="text-xs text-ink-muted block">
-            Equipment
+
+          <Field label="Equipment">
             <select
-              value={bankData?.equipment || ""}
-              onChange={(e) => updateBankField(exerciseName, "equipment", e.target.value)}
-              className="mt-1 w-full p-2 border border-border-control rounded-card bg-surface text-sm text-ink"
+              value={bankData.equipment || ""}
+              onChange={(e) => updateBankField(movementName, "equipment", e.target.value)}
+              style={inputStyle}
             >
-              <option value="">Auto ({resolveEquipment({ ...bankData, equipment: undefined }, exerciseName)})</option>
+              <option value="">Auto ({equipment})</option>
               {EQUIPMENT_OPTIONS.map((eq) => (
                 <option key={eq} value={eq}>
                   {eq}
                 </option>
               ))}
             </select>
-          </label>
-          <div className="card p-4 grid grid-cols-2 gap-3">
-            <label className="text-xs text-ink-muted">
-              Sets
+          </Field>
+
+          <div className="flex gap-2">
+            <Field label="Sets">
               <input
                 type="number"
                 min="1"
-                value={bankData?.sets ?? ""}
-                onChange={(e) => updateBankField(exerciseName, "sets", e.target.value)}
-                className="mt-1 w-full p-2 border border-border-control rounded-card bg-surface text-sm text-ink"
+                value={bankData.sets ?? ""}
+                onChange={(e) => updateBankField(movementName, "sets", e.target.value)}
+                style={inputStyle}
               />
-            </label>
-            <label className="text-xs text-ink-muted">
-              Rest (seconds)
+            </Field>
+            <Field label="Rest (s)">
               <input
                 type="number"
                 min="15"
                 step="15"
-                value={bankData?.restSeconds ?? ""}
-                onChange={(e) => updateBankField(exerciseName, "restSeconds", e.target.value)}
-                className="mt-1 w-full p-2 border border-border-control rounded-card bg-surface text-sm text-ink"
+                value={bankData.restSeconds ?? ""}
+                onChange={(e) => updateBankField(movementName, "restSeconds", e.target.value)}
+                style={inputStyle}
               />
-            </label>
-            <label className="text-xs text-ink-muted">
-              Reps
-              <div className="mt-1 flex">
-                <input
-                  type="text"
-                  value={bankData?.reps ?? ""}
-                  onChange={(e) => updateBankField(exerciseName, "reps", e.target.value)}
-                  className="flex-1 p-2 border border-border-control rounded-l-card bg-surface text-sm text-ink"
-                />
-                <select
-                  value={bankData?.repsUnit ?? "Reps"}
-                  onChange={(e) => updateBankField(exerciseName, "repsUnit", e.target.value)}
-                  className="border border-border-control border-l-0 rounded-r-card bg-surface-wash text-xs px-1"
-                >
-                  {REPS_UNITS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </label>
-            <label className="text-xs text-ink-muted">
-              Weight
-              <div className="mt-1 flex">
-                <input
-                  type="number"
-                  value={bankData?.weightUnit === "Body Wt." ? "" : bankData?.weight ?? ""}
-                  disabled={bankData?.weightUnit === "Body Wt."}
-                  onChange={(e) => updateBankField(exerciseName, "weight", e.target.value)}
-                  className="flex-1 p-2 border border-border-control rounded-l-card bg-surface text-sm text-ink disabled:opacity-50"
-                />
-                <select
-                  value={bankData?.weightUnit ?? "KG"}
-                  onChange={(e) => updateBankField(exerciseName, "weightUnit", e.target.value)}
-                  className="border border-border-control border-l-0 rounded-r-card bg-surface-wash text-xs px-1"
-                >
-                  {WEIGHT_UNITS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </label>
+            </Field>
           </div>
+
+          {/* A container has no load and no rep target — it has steps. */}
+          {!container && (
+            <div className="flex gap-2">
+              <Field label="Reps">
+                <div className="flex">
+                  <input
+                    value={bankData.reps ?? ""}
+                    onChange={(e) => updateBankField(movementName, "reps", e.target.value)}
+                    style={{ ...inputStyle, borderRadius: "14px 0 0 14px" }}
+                  />
+                  <select
+                    value={bankData.repsUnit ?? "Reps"}
+                    onChange={(e) => updateBankField(movementName, "repsUnit", e.target.value)}
+                    style={{ ...inputStyle, width: 74, borderRadius: "0 14px 14px 0", borderLeft: "none" }}
+                  >
+                    {REPS_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </Field>
+              <Field label="Weight">
+                <div className="flex">
+                  <input
+                    type="number"
+                    disabled={bankData.weightUnit === "Body Wt."}
+                    value={bankData.weightUnit === "Body Wt." ? "" : bankData.weight ?? ""}
+                    onChange={(e) => updateBankField(movementName, "weight", e.target.value)}
+                    style={{ ...inputStyle, borderRadius: "14px 0 0 14px" }}
+                  />
+                  <select
+                    value={bankData.weightUnit ?? "KG"}
+                    onChange={(e) => updateBankField(movementName, "weightUnit", e.target.value)}
+                    style={{ ...inputStyle, width: 90, borderRadius: "0 14px 14px 0", borderLeft: "none" }}
+                  >
+                    {WEIGHT_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </Field>
+            </div>
+          )}
+
+          {/*
+            Alternative sets: every set carries its own numbers, which is what
+            a pyramid or a drop set is. Off by default — most movements are
+            straight sets and a per-set table would be noise.
+          */}
+          {!container && (
+            <>
+              <button
+                type="button"
+                className="mode-chip"
+                data-active={!!bankData.isAlternative}
+                style={{ alignSelf: "flex-start" }}
+                onClick={() =>
+                  updateBankField(movementName, "isAlternative", !bankData.isAlternative)
+                }
+              >
+                Different numbers per set
+              </button>
+
+              {bankData.isAlternative && (
+                <div className="flex flex-col gap-[8px]">
+                  {Array.from({ length: Math.max(1, parseInt(bankData.sets, 10) || 1) }).map(
+                    (_, i) => {
+                      const alt = bankData.altSets?.[i] || {};
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <span
+                            className="tabular"
+                            style={{
+                              width: 20,
+                              flex: "none",
+                              fontFamily: "var(--font-display)",
+                              fontSize: 13,
+                              color: "var(--color-dim)",
+                            }}
+                          >
+                            {i + 1}
+                          </span>
+                          <input
+                            value={alt.reps ?? ""}
+                            placeholder="reps"
+                            onChange={(e) => updateAltSet(movementName, i, "reps", e.target.value)}
+                            style={{ ...inputStyle, height: 38 }}
+                          />
+                          <input
+                            value={alt.weight ?? ""}
+                            placeholder="kg"
+                            inputMode="decimal"
+                            onChange={(e) =>
+                              updateAltSet(movementName, i, "weight", e.target.value)
+                            }
+                            style={{ ...inputStyle, height: 38 }}
+                          />
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           <button
             type="button"
-            onClick={() => removeBankExercise(exerciseName)}
-            className="text-sm text-negative flex items-center gap-1.5"
+            className="btn-secondary"
+            onClick={() => {
+              removeBankExercise(movementName);
+              onBack();
+            }}
           >
-            <Trash2 className="w-4 h-4" /> Remove from library
+            Remove from library
           </button>
         </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-1.5">
-            {groups.length > 0 && <span className="chip">{groups.join(" · ")}</span>}
-            {PATTERN_LABELS[pattern] && <span className="chip">{PATTERN_LABELS[pattern]}</span>}
-            <span className="chip">{equipment}</span>
-            <span className="chip">
-              Rest {Math.floor(rest / 60)}:{String(rest % 60).padStart(2, "0")}
-            </span>
-          </div>
+      )}
 
-          {cues.length > 0 && (
-            <ul className="space-y-1.5">
-              {cues.map((cue, i) => (
-                <li key={i} className="text-sm text-ink-soft flex gap-2">
-                  <span className="text-accent">{String(i + 1).padStart(2, "0")}</span>
-                  {cue}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="card p-4">
-              <div className="stencil mb-1.5">Best set</div>
-              <div className="readout text-xl">
-                {stats.heaviestWeight > 0 ? `${stats.heaviestWeight} × ${stats.heaviestReps}` : "—"}
-              </div>
-            </div>
-            <div className="card p-4">
-              <div className="stencil mb-1.5">Est. 1RM</div>
-              <div className="readout text-xl">
-                {best ? `${Math.round(best.e1rm)} kg` : "—"}
-              </div>
-            </div>
-          </div>
-
-          {appearsIn.length > 0 && (
-            <div>
-              <div className="stencil mb-2">Appears in</div>
-              <div className="space-y-2">
-                {appearsIn.map(({ dayIdx, dayLabel }, i) => (
-                  <div key={i} className="flex items-baseline gap-3">
-                    <span className="flex-1 text-ink-soft">
-                      {weekdayLabel(dayIdx)}
-                      {dayLabel ? ` · ${dayLabel}` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2.5">
-            {pickingDay ? (
-              <div className="card p-3 space-y-1.5">
-                {(plans[activePlanId] || []).map((d, dayIdx) => (
-                  <button
-                    key={dayIdx}
-                    type="button"
-                    onClick={() => {
-                      appendExerciseToDay(activePlanId, dayIdx, exerciseName);
-                      setPickingDay(false);
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-card hover:bg-surface-wash text-sm text-ink-soft"
-                  >
-                    {weekdayLabel(dayIdx)}
-                    {d.name ? ` · ${d.name}` : ""}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <button type="button" onClick={() => setPickingDay(true)} className="btn-clay w-full py-3.5">
-                Add to a routine
-              </button>
+      {/* ---- links ---- */}
+      {(links.length > 0 || editing) && (
+        <div style={{ paddingTop: 22 }}>
+          <span className="label">Links</span>
+          <div className="flex flex-col gap-[8px]" style={{ paddingTop: 10 }}>
+            {(editing ? [...links, ""] : links).map((link, index) =>
+              editing ? (
+                <input
+                  key={index}
+                  value={link}
+                  onChange={(e) => setLink(index, e.target.value)}
+                  placeholder="https://…"
+                  style={{ ...inputStyle, height: 38 }}
+                />
+              ) : (
+                <a
+                  key={index}
+                  href={link}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="link-teal truncate"
+                  style={{ display: "block" }}
+                >
+                  {link}
+                </a>
+              )
             )}
-            <button type="button" onClick={onSeeHistory} className="btn-outline w-full py-3.5 text-sm">
-              See full history
+          </div>
+        </div>
+      )}
+
+      {!editing && Object.keys(routines || {}).length > 0 && (
+        <button
+          type="button"
+          className="link-teal text-left"
+          style={{ paddingTop: 20 }}
+          onClick={() => setAddingTo(true)}
+        >
+          Add to a routine
+        </button>
+      )}
+
+      {addingTo && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}>
+          <button type="button" style={{ flex: 1 }} onClick={() => setAddingTo(false)} aria-label="Close" />
+          <div
+            className="w-full max-w-lg mx-auto flex flex-col gap-2"
+            style={{
+              background: "var(--color-card)",
+              borderTop: "1px solid var(--color-border)",
+              padding: 22,
+              maxHeight: "70dvh",
+              overflowY: "auto",
+            }}
+          >
+            <span className="label">Add {movementName} to</span>
+            {Object.values(routines).map((routine) => (
+              <button
+                key={routine.id}
+                type="button"
+                onClick={() => addToRoutine(routine)}
+                className="row-card text-left row-title"
+              >
+                {routine.name}
+              </button>
+            ))}
+            <button type="button" className="btn-secondary" onClick={() => setAddingTo(false)}>
+              Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ---- history ---- */}
+      {!editing && (
+        <>
+          {points.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--color-dim)", paddingTop: 22 }}>
+              Nothing logged yet. Its history lands here after the first session.
+            </p>
+          ) : (
+            <>
+              {!container && recent.length > 1 && (
+                <div style={{ paddingTop: 22 }}>
+                  <span className="label">Estimated one-rep max</span>
+                  <div style={{ paddingTop: 14 }}>
+                    <Bars
+                      // Two sessions can share a date, so the index disambiguates.
+                      series={recent.map((p, i) => ({
+                        key: `${p.date}-${i}`,
+                        value: Math.round(p.e1rm),
+                      }))}
+                      height={110}
+                      label={`Estimated one-rep max over the last ${recent.length} sessions`}
+                    />
+                    <BarAxis
+                      from={recent.length >= 8 ? "8 sessions ago" : "first logged"}
+                      to="latest"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ paddingTop: 22 }}>
+                <PosterRow label="Sessions" value={points.length} brassRule />
+                {!container && stats.heaviestWeight > 0 && (
+                  <PosterRow
+                    label="Heaviest set"
+                    value={`${stats.heaviestWeight} × ${stats.heaviestReps}`}
+                  />
+                )}
+                <PosterRow label="Lifted" value={formatTonnage(totalTonnage)} />
+                {standing && (
+                  <PosterRow
+                    label="Tier"
+                    value={standing.rank || "unranked"}
+                    valueColor="var(--color-teal)"
+                  />
+                )}
+              </div>
+            </>
+          )}
+
+          {appearsIn.length > 0 && (
+            <div style={{ paddingTop: 22 }}>
+              <span className="label">Appears in</span>
+              <div style={{ paddingTop: 8 }}>
+                {appearsIn.map((entry) => (
+                  <React.Fragment key={entry.dayId}>
+                    <Rule />
+                    <div style={{ padding: "12px 0", fontSize: 14, color: "var(--color-text)" }}>
+                      Day {entry.position} · {entry.dayName}
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

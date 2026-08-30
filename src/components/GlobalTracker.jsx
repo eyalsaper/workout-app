@@ -1,6 +1,14 @@
 import React, { useState } from "react";
-import { CheckCircle2, Circle, ListChecks, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { useWorkout } from "../state/WorkoutContext";
+
+/*
+ * Weekly targets — the habits alongside the training.
+ *
+ * The list stays put; the checkmarks reset every week on their own, because
+ * they are stored per week key rather than as a flag you have to remember to
+ * clear. Unchecked is the normal state of a fresh week, not a failure, so
+ * nothing here counts a streak or goes red.
+ */
 
 export default function GlobalTracker() {
   const {
@@ -13,117 +21,121 @@ export default function GlobalTracker() {
     removeTrackerItem,
   } = useWorkout();
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const items = globalTracker || [];
-  const hasVisibleItems = items.some((name) => name.trim() !== "");
+  const visible = items.filter((name) => (name || "").trim() !== "");
+  const doneCount = items.filter((name, i) => (name || "").trim() && globalTrackerChecked[i]).length;
+
+  if (!visible.length && !editing) {
+    return (
+      <div className="card flex items-center justify-between gap-3" style={{ padding: 16 }}>
+        <span className="text-[13px]" style={{ color: "var(--color-dim)" }}>
+          No weekly targets yet.
+        </span>
+        <button type="button" className="link-teal" onClick={() => setEditing(true)}>
+          Add some
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="card p-6 sm:p-8">
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <ListChecks className="w-6 h-6 text-accent" /> Weekly targets
-          </h2>
-          <p className="text-ink-muted text-sm mt-1">
-            The list stays the same; checkmarks reset every week.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={resetTracker}
-            className="text-sm px-4 py-2 bg-surface-wash hover:bg-surface-wash text-ink-soft rounded-card transition-colors"
-          >
-            Reset checkmarks
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing((v) => !v)}
-            className={`px-4 py-2 rounded-card text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              isEditing
-                ? "bg-accent text-accent-ink hover:bg-accent-hot"
-                : "bg-surface border border-border-control text-ink-soft hover:bg-surface-wash"
-            }`}
-          >
-            {isEditing ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
-            {isEditing ? "Save list" : "Edit list"}
-          </button>
-        </div>
+    <div className="card flex flex-col gap-[12px]" style={{ padding: 16 }}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="label">
+          Weekly targets{visible.length ? ` · ${doneCount} of ${visible.length}` : ""}
+        </span>
+        <button
+          type="button"
+          className="link-teal"
+          style={{ fontSize: 12, flex: "none" }}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? "Done" : "Edit"}
+        </button>
       </div>
 
-      <div className="bg-surface-inset p-4 sm:p-6 rounded-card border border-border">
-        {isEditing ? (
-          <div className="space-y-3 max-w-2xl">
-            {items.map((item, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  list="exercise-bank-list"
-                  value={item}
-                  onChange={(e) => updateTrackerItem(idx, e.target.value)}
-                  placeholder="e.g. 10,000 Steps, Stretch..."
-                  className="flex-1 p-2 border border-border-control rounded-card focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeTrackerItem(idx)}
-                  aria-label="Remove tracker item"
-                  className="text-negative/80 hover:text-negative p-2"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addTrackerItem}
-              className="mt-2 px-4 py-2 text-accent hover:bg-accent/20 bg-accent/10 rounded-card transition-colors inline-flex items-center gap-2 font-medium"
-            >
-              <Plus className="w-4 h-4" /> Add item
+      {editing ? (
+        <div className="flex flex-col gap-[8px]">
+          {items.map((item, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <input
+                value={item}
+                onChange={(e) => updateTrackerItem(index, e.target.value)}
+                placeholder="Drink 2L water"
+                style={{
+                  flex: 1,
+                  height: 40,
+                  borderRadius: "var(--radius-control)",
+                  background: "var(--color-card-hi)",
+                  border: "1px solid #24272d",
+                  padding: "0 12px",
+                  color: "var(--color-text)",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => removeTrackerItem(index)}
+                aria-label={`Remove ${item || "target"}`}
+                style={{ fontSize: 12, color: "var(--color-dim)", flex: "none", padding: "0 4px" }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button type="button" className="mode-chip" onClick={addTrackerItem}>
+              Add a target
+            </button>
+            <button type="button" className="mode-chip" onClick={resetTracker}>
+              Clear this week
             </button>
           </div>
-        ) : (
-          <div className="grid md:grid-cols-4 sm:grid-cols-2 gap-4">
-            {hasVisibleItems ? (
-              items.map((name, idx) => {
-                if (!name.trim()) return null;
-                const isChecked = !!globalTrackerChecked[idx];
-                return (
-                  <button
-                    type="button"
-                    key={idx}
-                    onClick={() => toggleTrackerItem(idx)}
-                    aria-pressed={isChecked}
-                    className={`flex items-center gap-3 p-2 rounded-card transition-all text-left ${
-                      isChecked
-                        ? "opacity-50 bg-transparent"
-                        : "bg-surface border border-border hover:bg-surface-wash"
-                    }`}
-                  >
-                    {isChecked ? (
-                      <CheckCircle2 className="w-5 h-5 text-positive-ink flex-shrink-0" />
-                    ) : (
-                      <Circle className="w-5 h-5 text-ink-faint flex-shrink-0 transition-colors" />
-                    )}
-                    <span
-                      className={`flex-1 truncate ${
-                        isChecked ? "line-through opacity-70" : "text-ink font-medium"
-                      }`}
-                      title={name}
-                    >
-                      {name}
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="col-span-full text-center text-ink-muted italic py-4">
-                Your tracker list is empty.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-[10px]">
+          {items.map((item, index) => {
+            if (!(item || "").trim()) return null;
+            const checked = !!globalTrackerChecked[index];
+            return (
+              <button
+                key={index}
+                type="button"
+                onClick={() => toggleTrackerItem(index)}
+                className="flex items-center gap-3 text-left"
+                style={{ minHeight: 28 }}
+                aria-pressed={checked}
+              >
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    flex: "none",
+                    borderRadius: 5,
+                    border: checked ? "1px solid var(--color-teal)" : "1px solid #33363d",
+                    background: checked ? "var(--color-teal)" : "transparent",
+                    color: "#0e0f12",
+                    fontSize: 12,
+                    lineHeight: "16px",
+                    textAlign: "center",
+                  }}
+                >
+                  {checked ? "✓" : ""}
+                </span>
+                <span
+                  style={{
+                    fontSize: 14,
+                    color: checked ? "var(--color-dim)" : "var(--color-text)",
+                  }}
+                >
+                  {item}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

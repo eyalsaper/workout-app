@@ -3,7 +3,7 @@
 // under Pre-made: pick one and it starts a session immediately, no plan
 // involved. Pure data + pure helpers, no React, no Firebase.
 
-import { LIBRARY_BY_NAME, equipmentFor } from "./exerciseLibrary";
+import { LIBRARY_BY_NAME, equipmentFor } from "./exerciseLibrary.js";
 
 export const PREMADE_WORKOUTS = [
   {
@@ -111,24 +111,36 @@ const MUSCLE_GROUP_MAP = {
 export const MUSCLE_FILTERS = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"];
 export const EQUIPMENT_FILTERS = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight"];
 
-/** The coarse muscle groups a list of exercise names trains. */
-export function workoutMuscles(exerciseNames) {
+/**
+ * The coarse muscle groups a list of exercise names trains.
+ *
+ * Returns an ARRAY. It used to return a Set, which every caller then tried to
+ * `.some()` or `.join()` — both of which a Set does not have, so tapping a
+ * filter chip blanked the screen.
+ *
+ * `bank` is the account's own movement data, checked first: the stock library
+ * only knows the movements it shipped with, and a filter that ignores
+ * everything you added yourself is worse than no filter.
+ */
+export function workoutMuscles(exerciseNames, bank) {
   const found = new Set();
   (exerciseNames || []).forEach((name) => {
-    (LIBRARY_BY_NAME[name]?.muscleGroups || []).forEach((g) => {
+    const groups = bank?.[name]?.muscleGroups?.length
+      ? bank[name].muscleGroups
+      : LIBRARY_BY_NAME[name]?.muscleGroups || [];
+    groups.forEach((g) => {
       const mapped = MUSCLE_GROUP_MAP[g];
       if (mapped) found.add(mapped);
     });
   });
-  return found;
+  return [...found];
 }
 
-/** The equipment a list of exercise names needs. */
-export function workoutEquipment(exerciseNames) {
+/** The equipment a list of exercise names needs. Also an array. */
+export function workoutEquipment(exerciseNames, bank) {
   const found = new Set();
   (exerciseNames || []).forEach((name) => {
-    const item = LIBRARY_BY_NAME[name];
-    found.add(equipmentFor(name, item?.weightUnit));
+    found.add(equipmentFor(name, bank?.[name]?.weightUnit || LIBRARY_BY_NAME[name]?.weightUnit));
   });
-  return found;
+  return [...found];
 }

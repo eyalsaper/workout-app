@@ -1,84 +1,133 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useWorkout } from "../state/WorkoutContext";
-import { TEMPLATES } from "../lib/templates";
-import { WEEKDAY_NAMES } from "../lib/training";
+import ArtLayer from "../components/ArtLayer";
+import { Kicker, PosterButton, Rule } from "../components/poster";
+import { artSeed } from "../lib/art";
+import { READY_MADE } from "../lib/templates";
+import { parseImportCsv } from "../lib/csv";
 
-const SCRATCH_ID = "scratch";
+/*
+ * 8O · First run.
+ *
+ * No account, or an account with no programme. Ready-made creates a programme
+ * in PLAN MODE with its days in order, cursor at Day 1, round 1 — the user
+ * chooses nothing about modes.
+ *
+ * No sign-up wall before this screen; account creation happens at first sync.
+ */
 
-export default function FirstRunPage() {
-  const { seedPlanFromTemplate, dismissFirstRun } = useWorkout();
-  const [selected, setSelected] = useState(TEMPLATES[0].id);
+const HERO = 430;
 
-  const setUpWeek = () => {
-    if (selected === SCRATCH_ID) {
-      seedPlanFromTemplate(WEEKDAY_NAMES.map((day) => ({ day, exercises: [] })));
-    } else {
-      const template = TEMPLATES.find((t) => t.id === selected);
-      seedPlanFromTemplate(template.days);
-    }
+export default function FirstRunPage({ onBuildOwn }) {
+  const { createProgramFromTemplate, importSessions } = useWorkout();
+  const [picking, setPicking] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const fileRef = useRef(null);
+
+  const runImport = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const text = await file.text();
+    const { sessions, imported, skipped } = parseImportCsv(text);
+    importSessions(sessions);
+    setNotice(
+      `${imported} set${imported === 1 ? "" : "s"} imported${
+        skipped ? `, ${skipped} row${skipped === 1 ? "" : "s"} skipped` : ""
+      }.`
+    );
   };
 
   return (
-    <div className="min-h-screen bg-surface-page flex items-center justify-center p-4">
-      <div className="max-w-sm w-full space-y-6 animate-in fade-in duration-300">
-        <div>
-          <div className="text-accent text-sm">Welcome</div>
-          <h1 className="mt-2.5 text-5xl leading-[1.05]">
-            A notebook
+    <div
+      className="flex-1 min-h-0 flex flex-col"
+      style={{ background: "var(--color-poster)", overflowY: "auto" }}
+    >
+      <div
+        className="relative flex-none flex flex-col justify-end"
+        style={{ height: HERO, padding: "0 24px 24px" }}
+      >
+        <ArtLayer mood="welcome" seedKey={artSeed.firstRun()} scrim="poster" />
+        <div className="relative flex flex-col gap-[8px]">
+          <Kicker>Iron Log</Kicker>
+          <span className="poster-title" data-lines="2">
+            Pick up
             <br />
-            for your lifting.
-          </h1>
-          <p className="mt-3.5 text-sm text-ink-mid leading-relaxed">
-            No streak badges, no shouting. Write down what you lift, and watch the numbers move.
-          </p>
+            the bar
+          </span>
+          <span style={{ fontSize: 13, color: "var(--color-muted-poster)" }}>
+            a log, a program, and the numbers that matter
+          </span>
         </div>
+      </div>
 
-        <div className="card-hero p-5">
-          <div className="stencil mb-3">Start with</div>
-          <div className="space-y-2">
-            {TEMPLATES.map((t) => (
+      <div className="flex flex-col gap-3 flex-1" style={{ padding: "0 24px 16px" }}>
+        {picking ? (
+          <>
+            <span className="label">Ready-made</span>
+            {READY_MADE.map((template) => (
               <button
-                key={t.id}
+                key={template.id}
                 type="button"
-                onClick={() => setSelected(t.id)}
-                className={`w-full text-left rounded-card p-3.5 border transition-colors ${
-                  selected === t.id ? "border-[1.5px] border-accent bg-accent/5" : "border-border"
-                }`}
+                className="row-card flex justify-between items-center w-full text-left press"
+                onClick={() => createProgramFromTemplate(template)}
               >
-                <div className="text-lg" style={{ fontFamily: "var(--font-heading)" }}>
-                  {t.label}
+                <div className="flex flex-col gap-[2px] min-w-0">
+                  <span className="row-title truncate">{template.name}</span>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    {template.description}
+                  </span>
                 </div>
-                <div className="text-xs text-ink-muted mt-0.5">{t.description}</div>
+                <span className="row-value" style={{ flex: "none" }}>
+                  {template.days.length}
+                </span>
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => setSelected(SCRATCH_ID)}
-              className={`w-full text-center rounded-card p-3.5 text-sm font-medium ${
-                selected === SCRATCH_ID
-                  ? "border-[1.5px] border-accent bg-accent/5 text-ink"
-                  : "slot-empty text-ink-muted"
-              }`}
-            >
-              Build my own from scratch
+            <button type="button" className="btn-secondary" onClick={() => setPicking(false)}>
+              Back
             </button>
-          </div>
-        </div>
+          </>
+        ) : (
+          <>
+            <PosterButton onClick={() => setPicking(true)}>Start a ready-made program</PosterButton>
+            <button type="button" className="btn-secondary btn-poster" onClick={onBuildOwn}>
+              Build my own
+            </button>
 
-        <p className="aside text-sm">You can change all of this later — nothing here is locked in.</p>
+            <div style={{ marginTop: "auto" }}>
+              <Rule />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="flex items-center justify-between w-full text-left gap-3"
+                style={{ padding: "14px 0" }}
+              >
+                <div className="flex flex-col gap-[2px]">
+                  <span className="row-title">Already training?</span>
+                  <span className="text-[12px]" style={{ color: "var(--color-muted)" }}>
+                    pull a CSV from your old app
+                  </span>
+                </div>
+                <span style={{ color: "var(--color-teal)", fontSize: 13, flex: "none" }}>
+                  Import
+                </span>
+              </button>
+              {notice && (
+                <span style={{ fontSize: 12, color: "var(--color-teal)" }} role="status">
+                  {notice}
+                </span>
+              )}
+            </div>
+          </>
+        )}
 
-        <div className="space-y-2.5">
-          <button type="button" onClick={setUpWeek} className="btn-ink w-full py-4">
-            Set up my week
-          </button>
-          <button
-            type="button"
-            onClick={dismissFirstRun}
-            className="w-full text-center text-sm font-medium text-ink-muted hover:text-accent"
-          >
-            I already have data to import
-          </button>
-        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={runImport}
+          style={{ display: "none" }}
+        />
       </div>
     </div>
   );
