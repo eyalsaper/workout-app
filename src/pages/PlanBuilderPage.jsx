@@ -1,5 +1,7 @@
 import React from "react";
 import { useWorkout } from "../state/WorkoutContext";
+import { downloadTextFile } from "../lib/csv";
+import { planToJson, planToCsv, planFilename } from "../lib/planExport";
 
 /*
  * The plan editor — how many workouts, in what order, and what is in each.
@@ -16,6 +18,37 @@ import { useWorkout } from "../state/WorkoutContext";
 export default function PlanBuilderPage({ onBack, onEditDay }) {
   const { planDays, setPlanDays, setPlanLength, dayItemCount, describeDay, program } =
     useWorkout();
+  const { routines, exerciseBank } = useWorkout();
+
+  // Shrinking the plan drops days off the end for good, so a day that has
+  // movements in it is never dropped without asking first.
+  const chooseLength = (n) => {
+    const dropped = planDays.slice(n).filter((day) => dayItemCount(day) > 0);
+    if (dropped.length) {
+      const names = dropped.map((day) => day.name || "Workout").join(", ");
+      const ok = window.confirm(
+        `This removes ${dropped.length} workout${dropped.length === 1 ? "" : "s"} that ` +
+          `${dropped.length === 1 ? "has" : "have"} movements in ${dropped.length === 1 ? "it" : "them"}: ${names}.
+
+` +
+          "It cannot be undone. Export the plan first if you want a copy. Remove anyway?"
+      );
+      if (!ok) return;
+    }
+    setPlanLength(n);
+  };
+
+  const exportPlan = (ext) => {
+    const text =
+      ext === "json"
+        ? planToJson(program, routines, exerciseBank)
+        : planToCsv(program, routines, exerciseBank);
+    downloadTextFile(
+      planFilename(program, ext),
+      text,
+      ext === "json" ? "application/json" : "text/csv"
+    );
+  };
 
   const move = (index, delta) => {
     const target = index + delta;
@@ -52,7 +85,7 @@ export default function PlanBuilderPage({ onBack, onEditDay }) {
               type="button"
               className="mode-chip"
               data-active={count === n}
-              onClick={() => setPlanLength(n)}
+              onClick={() => chooseLength(n)}
             >
               {n}
             </button>
@@ -125,7 +158,15 @@ export default function PlanBuilderPage({ onBack, onEditDay }) {
         )}
       </div>
 
-      <span style={{ fontSize: 12, color: "var(--color-dim)", marginTop: "auto" }}>
+      <div className="flex gap-2 flex-none" style={{ marginTop: "auto" }}>
+        <button type="button" className="mode-chip" onClick={() => exportPlan("json")}>
+          Export plan (JSON)
+        </button>
+        <button type="button" className="mode-chip" onClick={() => exportPlan("csv")}>
+          Export plan (CSV)
+        </button>
+      </div>
+      <span style={{ fontSize: 12, color: "var(--color-dim)" }}>
         Tap a workout to build or edit it.
       </span>
     </div>
