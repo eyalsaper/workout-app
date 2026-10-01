@@ -35,6 +35,7 @@ import {
   toScheduleMode,
 } from "../lib/plan";
 import { EXERCISE_LIBRARY, libraryEntry } from "../lib/exerciseLibrary";
+import { planFromImport } from "../lib/planImport";
 import { useAuth } from "./AuthContext";
 import { userBasePath } from "../firebase";
 
@@ -1697,6 +1698,42 @@ export function WorkoutProvider({ children }) {
       return copy.id;
     };
 
+    /**
+     * Saves a parsed plan file (planImport.js). "update" edits the active
+     * programme in place so days keep their ids, and with them the link from
+     * past sessions; "new" adds a programme and makes it the active one.
+     * Missing exercises are added to the bank; existing ones are untouched.
+     */
+    const applyPlanImport = (parsed, mode) => {
+      const { program: built, additions, summary } = planFromImport(parsed, {
+        mode: mode === "update" && program ? "update" : "new",
+        program,
+        bank: exerciseBank,
+        newId: newLocalId,
+      });
+      if (Object.keys(additions).length) {
+        setExerciseBank((prev) => {
+          const next = { ...prev };
+          Object.entries(additions).forEach(([name, entry]) => {
+            if (!next[name]) next[name] = entry;
+          });
+          delete next._empty;
+          return next;
+        });
+      }
+      if (summary.mode === "update") {
+        setProgram(built);
+      } else {
+        setPrograms((prev) => {
+          const next = { ...prev };
+          delete next.__v0;
+          return { ...next, [built.id]: built };
+        });
+        setSettings((prev) => ({ ...prev, activeProgramId: built.id, onboarded: true }));
+      }
+      return summary;
+    };
+
     /** Refuses to delete the last one — there must always be a programme. */
     const removeProgram = (id) => {
       if (programIds.length <= 1) return;
@@ -1724,6 +1761,7 @@ export function WorkoutProvider({ children }) {
       programIds,
       activeProgramId,
       createProgram,
+      applyPlanImport,
       switchProgram,
       renameProgram,
       duplicateProgram,

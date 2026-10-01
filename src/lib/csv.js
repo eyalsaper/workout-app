@@ -65,7 +65,7 @@ export function downloadTextFile(filename, text, mimeType = "text/csv") {
  * `rows` is [[sessionId, session], ...]; `dayNameFor` resolves a planDayId to
  * "Day 3" and is passed in so this file never reaches into the programme.
  */
-export function monthCsv(rows, dayNameFor = () => "") {
+export function monthCsv(rows, dayNameFor = () => "", { sessionNotes = false } = {}) {
   const header = [
     "date",
     "session_id",
@@ -77,6 +77,12 @@ export function monthCsv(rows, dayNameFor = () => "") {
     "weight_kg",
     "reps",
   ];
+  // Opt-in, and only when some session actually has a note or feeling, so the
+  // plain export keeps its exact columns.
+  const noteOf = (session) =>
+    [session.note, session.feeling].map((t) => String(t ?? "").trim()).filter(Boolean).join(" | ");
+  const withNotes = sessionNotes && (rows || []).some(([, s]) => noteOf(s));
+  if (withNotes) header.push("session_note");
   const out = [header];
 
   [...(rows || [])]
@@ -95,6 +101,7 @@ export function monthCsv(rows, dayNameFor = () => "") {
             index + 1,
             set.weight || "",
             set.reps || "",
+            ...(withNotes ? [noteOf(session)] : []),
           ]);
         });
       });

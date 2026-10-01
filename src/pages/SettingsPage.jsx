@@ -4,6 +4,12 @@ import { useAuth } from "../state/AuthContext";
 import ArtBand from "../components/ArtBand";
 import { libraryCount } from "../lib/art";
 import { switchModeCopy } from "../lib/plan";
+import {
+  buildObsidianFiles,
+  deliverObsidianFiles,
+  readLastExport,
+  recordExport,
+} from "../lib/obsidianExport";
 
 /*
  * 8N · Settings.
@@ -67,7 +73,19 @@ function Choice({ options, value, onChange }) {
 }
 
 export default function SettingsPage({ onBack, onOpenArtLibrary, onOpenMovementLibrary }) {
-  const { settings, setSettings, program, setProgramMode, exerciseBank } = useWorkout();
+  const { settings, setSettings, program, setProgramMode, exerciseBank, sessions, routines, planDays } =
+    useWorkout();
+  const [lastExport, setLastExport] = useState(readLastExport);
+  const [exportState, setExportState] = useState("");
+
+  const exportToObsidian = async () => {
+    setExportState("working");
+    const built = buildObsidianFiles({ sessions, program, routines, exerciseBank, planDays });
+    const result = await deliverObsidianFiles(built);
+    if (result === "cancelled") return setExportState("");
+    setLastExport(recordExport());
+    setExportState(result);
+  };
   const movementCount = Object.keys(exerciseBank || {}).filter(
     (name) => name !== "_empty" && !exerciseBank[name].isHidden
   ).length;
@@ -178,6 +196,27 @@ export default function SettingsPage({ onBack, onOpenArtLibrary, onOpenMovementL
           sub="add your own images"
           value={`${libraryCount()} images`}
           onClick={onOpenArtLibrary}
+        />
+
+        <span className="label" style={{ paddingLeft: 2, marginTop: 6 }}>
+          Obsidian
+        </span>
+        <Row
+          label="Export to Obsidian"
+          sub={
+            exportState === "working"
+              ? "preparing…"
+              : lastExport
+              ? `last export ${new Date(lastExport).toLocaleString(undefined, {
+                  day: "numeric",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}${exportState === "downloaded" ? " · saved to Downloads" : ""}`
+              : "history + plan, two files, same names every time"
+          }
+          value="Export"
+          onClick={exportToObsidian}
         />
 
         <Row label="Account" value={user?.email || "—"} />
